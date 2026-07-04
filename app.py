@@ -9,8 +9,6 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
-import hashlib
-import os
 
 warnings.filterwarnings('ignore')
 
@@ -19,80 +17,93 @@ st.set_page_config(
     page_title="BIST Sinyal Tarama V3",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ===================== YETKİLENDİRME =====================
 def check_password():
-    """Şifre kontrolü - Sadece yetkili kullanıcı girebilir"""
+    """Şifre kontrolü - Çoklu cihaz ve session desteği"""
     
-    # BU ŞİFREYİ DEĞİŞTİRİN!
+    # BU BİLGİLERİ DEĞİŞTİRİN!
     CORRECT_USERNAME = "Karabulut"
-    CORRECT_PASSWORD = "Elmalar01*"  # Güçlü bir şifre belirleyin
+    CORRECT_PASSWORD = "Elmalar01*"
     
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     
-    if not st.session_state.authenticated:
-        # Login ekranı
-        st.markdown("""
-        <style>
-            .login-container {
-                max-width: 400px;
-                margin: 100px auto;
-                padding: 2rem;
-                background: white;
-                border-radius: 15px;
-                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-            }
-            .login-header {
-                text-align: center;
-                margin-bottom: 2rem;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        st.markdown("## 🔐 BIST Sinyal Tarama V3")
-        st.markdown("#### Lütfen giriş yapın")
-        
-        username = st.text_input("👤 Kullanıcı Adı", placeholder="Kullanıcı adınızı girin")
-        password = st.text_input("🔒 Şifre", type="password", placeholder="Şifrenizi girin")
-        
-        if st.button("🚀 GİRİŞ YAP", use_container_width=True):
+    if st.session_state.authenticated:
+        return True
+    
+    # CSS
+    st.markdown("""
+    <style>
+        .login-container {
+            max-width: 400px;
+            margin: 80px auto;
+            padding: 2.5rem;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            text-align: center;
+        }
+        .login-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        .login-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 0.5rem;
+        }
+        .login-subtitle {
+            font-size: 1rem;
+            color: #666;
+            margin-bottom: 2rem;
+        }
+        .stTextInput>div>div>input {
+            text-align: center;
+            font-size: 1.1rem;
+            padding: 0.75rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.markdown('<div class="login-icon">🔐</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-title">BIST Sinyal Tarama</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-subtitle">Version 3.0 | Yetkili Giriş</div>', unsafe_allow_html=True)
+    
+    username = st.text_input("👤 Kullanıcı Adı", key="user_input", placeholder="Kullanıcı adınız")
+    password = st.text_input("🔒 Şifre", type="password", key="pass_input", placeholder="Şifreniz")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 GİRİŞ YAP", use_container_width=True, type="primary"):
             if username == CORRECT_USERNAME and password == CORRECT_PASSWORD:
                 st.session_state.authenticated = True
+                st.success("✅ Giriş başarılı!")
+                time.sleep(0.5)
                 st.rerun()
             else:
                 st.error("❌ Hatalı kullanıcı adı veya şifre!")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        return False
     
-    return True
+    st.markdown('</div>', unsafe_allow_html=True)
+    return False
 
 # ===================== CSS STİLLERİ =====================
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2rem;
         font-weight: 700;
         text-align: center;
         padding: 1rem;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        border-radius: 10px;
-        margin-bottom: 2rem;
+        border-radius: 15px;
+        margin-bottom: 1.5rem;
     }
-    .metric-card {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 1.5rem;
-        text-align: center;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    .positive { color: #28a745; font-weight: bold; }
-    .negative { color: #dc3545; font-weight: bold; }
     .stButton>button {
         width: 100%;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -101,30 +112,19 @@ st.markdown("""
         padding: 0.75rem;
         border-radius: 10px;
         border: none;
+        font-size: 1rem;
     }
     .logout-btn {
         text-align: right;
-        padding: 0.5rem;
     }
-    .status-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
+    .metric-value {
+        font-size: 1.8rem;
         font-weight: bold;
-    }
-    .status-online {
-        background: #d4edda;
-        color: #155724;
-    }
-    .status-offline {
-        background: #f8d7da;
-        color: #721c24;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== SABİTLER (OPTİMİZE) =====================
+# ===================== SABİTLER =====================
 LOOKBACK_DAYS = 150
 FORWARD_STEPS = [5, 10, 15, 30, 60, 90]
 MAX_WORKERS = 10
@@ -316,32 +316,23 @@ def check_signal(df, i, params):
     try:
         rsi = df['RSI'].iloc[i]
         if pd.isna(rsi) or rsi > params['RSI_max']: return False, "", 0, []
-        
         close = df['Close'].iloc[i]
         ma200 = df['MA200'].iloc[i]
         if pd.isna(ma200): return False, "", 0, []
-        
         ma200_diff = ((close - ma200) / ma200) * 100
         if ma200_diff < params['MA200_diff_min']: return False, "", 0, []
-        
         stoch = df['Stochastic'].iloc[i]
         if pd.isna(stoch) or stoch > params['Stochastic_max']: return False, "", 0, []
-        
         adx = df['ADX'].iloc[i]
         if pd.isna(adx) or adx < params['ADX_min']: return False, "", 0, []
-        
         vol_ratio = df['Volume_MA_ratio'].iloc[i]
         if pd.isna(vol_ratio) or vol_ratio < params['Volume_MA_ratio']: return False, "", 0, []
-        
         trend = df[f'Volume_Trend_{params["Volume_trend_days"]}'].iloc[i]
         if trend == 0: return False, "", 0, []
-        
         corr = df['Price_Volume_Corr'].iloc[i]
         if pd.isna(corr) or corr < params['Price_volume_correlation']: return False, "", 0, []
-        
         mfi = df['MFI'].iloc[i]
         if pd.isna(mfi) or mfi > params['MFI_max']: return False, "", 0, []
-        
         return True, "✓", 0, []
     except:
         return False, "", 0, []
@@ -375,24 +366,18 @@ def process_single_stock(hisse, ref_date_str):
     try:
         df = get_data_cached(hisse, ref_date_str)
         if df is None: return None
-        
         df = calculate_indicators(df)
         i = find_ref_index(df, ref_date)
         if i is None: return None
-        
         current = get_value(df, i, 'Close')
         if current is None: return None
-        
         params = STRATEGIES['Esnek']
         is_buy, msg, score, details = check_signal(df, i, params)
-        
         if not is_buy: return None
         
         row = {
-            "Hisse": hisse,
-            "Tarih": df.iloc[i]['Date'].strftime('%Y-%m-%d'),
-            "Kapanis": round(current, 2),
-            "Puan": score,
+            "Hisse": hisse, "Tarih": df.iloc[i]['Date'].strftime('%Y-%m-%d'),
+            "Kapanis": round(current, 2), "Puan": score,
             "RSI": round(get_value(df, i, 'RSI'), 1),
             "ADX": round(get_value(df, i, 'ADX'), 1),
             "Hacim/MA": round(get_value(df, i, 'Volume_MA_ratio'), 2),
@@ -412,14 +397,12 @@ def process_single_stock(hisse, ref_date_str):
         if row['ADX'] > RISK_FILTERS['Max_ADX']: return None
         if row['Hacim/MA'] < RISK_FILTERS['Min_Volume_MA']: return None
         if row['MFI'] > RISK_FILTERS['Max_MFI']: return None
-        
         if row.get('Perf_Skor', 0) < RISK_FILTERS['Min_Perf_Score']: return None
         
         rets = []
         if row.get('+5_RET') is not None: rets.append(row['+5_RET'])
         if row.get('+10_RET') is not None: rets.append(row['+10_RET'])
         if row.get('+15_RET') is not None: rets.append(row['+15_RET'])
-        
         if rets and sum(rets)/len(rets) <= 0: return None
         
         return row
@@ -429,14 +412,11 @@ def process_single_stock(hisse, ref_date_str):
 def run_single_date_v3_parallel(hisseler, ref_date, max_workers=MAX_WORKERS):
     results = []
     ref_date_str = ref_date.strftime('%Y-%m-%d') if hasattr(ref_date, 'strftime') else ref_date
-    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(process_single_stock, h, ref_date_str): h for h in hisseler}
         for future in as_completed(futures):
             result = future.result()
-            if result:
-                results.append(result)
-    
+            if result: results.append(result)
     return results
 
 def get_business_days_between(start_date, end_date):
@@ -448,23 +428,19 @@ def get_business_days_between(start_date, end_date):
         current += timedelta(days=1)
     return business_days
 
-# ===================== GRAFİK FONKSİYONLARI (DÜZELTİLMİŞ) =====================
+# ===================== GRAFİK FONKSİYONLARI =====================
 
 def create_performance_chart(all_signals):
-    periods = []
-    avg_returns = []
-    win_rates = []
-    
+    periods, avg_returns, win_rates = [], [], []
     for s in FORWARD_STEPS:
         rets = [r.get(f'+{s}_RET', 0) for r in all_signals if r.get(f'+{s}_RET') is not None]
         if rets:
-            periods.append(f'{s} Gün')
+            periods.append(f'{s}G')
             avg_returns.append(sum(rets)/len(rets))
             win_rates.append(sum(1 for r in rets if r > 0)/len(rets)*100)
     
     fig = make_subplots(rows=1, cols=2, subplot_titles=('Ortalama Getiri (%)', 'Kazanma Oranı (%)'),
                         specs=[[{'type': 'bar'}, {'type': 'bar'}]])
-    
     colors_ret = ['#28a745' if x > 0 else '#dc3545' for x in avg_returns]
     colors_win = ['#28a745' if x > 80 else '#ffc107' if x > 60 else '#dc3545' for x in win_rates]
     
@@ -472,94 +448,63 @@ def create_performance_chart(all_signals):
                          text=[f'%{x:.1f}' for x in avg_returns], textposition='outside'), row=1, col=1)
     fig.add_trace(go.Bar(x=periods, y=win_rates, marker_color=colors_win,
                          text=[f'%{x:.0f}' for x in win_rates], textposition='outside'), row=1, col=2)
-    
-    fig.update_layout(height=400, showlegend=False, template='plotly_white',
-                      margin=dict(t=40, b=20, l=20, r=20))
-    fig.update_yaxes(title_text='Getiri (%)', row=1, col=1)
-    fig.update_yaxes(title_text='Kazanma (%)', row=1, col=2)
-    
+    fig.update_layout(height=400, showlegend=False, template='plotly_white', margin=dict(t=40, b=20, l=20, r=20))
     return fig
 
 def create_signal_scatter(all_signals):
     df = pd.DataFrame(all_signals)
     df['+30_RET_clean'] = df['+30_RET'].fillna(0)
-    
     fig = px.scatter(df, x='RSI', y='Perf_Skor', size='Hacim/MA', color='+30_RET_clean',
                      hover_name='Hisse', text='Hisse',
                      color_continuous_scale=['#dc3545', '#ffc107', '#28a745'],
-                     title='Sinyal Kalite Haritası (N/A = 0)',
-                     labels={'+30_RET_clean': '30G Getiri (%)', 'Perf_Skor': 'Performans Skoru'})
-    
+                     title='Sinyal Kalite Haritası', labels={'+30_RET_clean': '30G Getiri (%)'})
     fig.update_traces(textposition='top center', marker=dict(sizemode='area', sizeref=0.1))
     fig.update_layout(height=500, template='plotly_white')
-    
     return fig
 
 def create_waterfall_chart(all_signals):
     df = pd.DataFrame(all_signals)
     df['+30_RET_clean'] = df['+30_RET'].fillna(0)
     df_sorted = df.sort_values('+30_RET_clean', ascending=False)
-    
     colors = ['#28a745' if x > 0 else '#ffc107' if x == 0 else '#dc3545' for x in df_sorted['+30_RET_clean']]
-    
-    fig = go.Figure(go.Bar(
-        x=df_sorted['Hisse'], y=df_sorted['+30_RET_clean'],
-        marker_color=colors,
-        text=[f'%{x:.1f}' if pd.notna(x) else 'N/A' for x in df_sorted['+30_RET']],
-        textposition='outside'
-    ))
-    
-    fig.update_layout(title='30 Günlük Getiri Dağılımı (Sarı = Henüz Oluşmadı)', height=400,
-                      template='plotly_white', xaxis_tickangle=-45)
-    
+    fig = go.Figure(go.Bar(x=df_sorted['Hisse'], y=df_sorted['+30_RET_clean'], marker_color=colors,
+                           text=[f'%{x:.1f}' if pd.notna(x) else 'N/A' for x in df_sorted['+30_RET']],
+                           textposition='outside'))
+    fig.update_layout(title='30 Günlük Getiri Dağılımı', height=400, template='plotly_white', xaxis_tickangle=-45)
     return fig
 
 def create_date_heatmap(all_results):
     data = []
     for date_str, results in all_results.items():
         for r in results:
-            data.append({
-                'Tarih': date_str,
-                'Hisse': r['Hisse'],
-                '30G': r.get('+30_RET', 0) if r.get('+30_RET') is not None else 0
-            })
-    
+            data.append({'Tarih': date_str, 'Hisse': r['Hisse'], '30G': r.get('+30_RET', 0) if r.get('+30_RET') is not None else 0})
     df = pd.DataFrame(data)
-    if df.empty:
-        return None
-    
+    if df.empty: return None
     pivot = df.pivot_table(values='30G', index='Hisse', columns='Tarih', aggfunc='mean')
-    
-    fig = px.imshow(pivot, text_auto='.0f', aspect='auto',
-                    color_continuous_scale=['#dc3545', '#ffffff', '#28a745'],
+    fig = px.imshow(pivot, text_auto='.0f', aspect='auto', color_continuous_scale=['#dc3545', '#ffffff', '#28a745'],
                     title='Tarih & Hisse Bazında 30G Getiri (%)')
-    
     fig.update_layout(height=max(300, len(pivot)*30), template='plotly_white')
-    
     return fig
 
 # ===================== ANA UYGULAMA =====================
 
 def main():
-    # Şifre kontrolü
     if not check_password():
         return
     
-    # Üst bar - Kullanıcı bilgisi ve çıkış
-    col1, col2 = st.columns([6, 1])
+    # Header
+    col1, col2 = st.columns([8, 1])
     with col1:
         st.markdown('<div class="main-header">📈 BIST SİNYAL TARAMA V3<br><small>Paralel İşlem | Gelişmiş Skor | Mobil Uyumlu</small></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
             st.session_state.authenticated = False
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
-        st.info(f"🚀 **Paralel:** {MAX_WORKERS} thread\n📊 **Lookback:** {LOOKBACK_DAYS}g\n📱 **Mobil:** Uyumlu")
+        st.info(f"🚀 Paralel: {MAX_WORKERS} thread\n📊 Lookback: {LOOKBACK_DAYS}g\n📱 Mobil: Uyumlu")
         
         st.markdown("**📊 Hisse Listesi**")
         listeler = get_bist_lists()
@@ -567,149 +512,104 @@ def main():
         hisseler = listeler[liste_secim]
         st.markdown(f"*{len(hisseler)} hisse*")
         
-        st.markdown("**📅 Tarih Aralığı**")
-        tarih_tip = st.radio("Tarih Tipi", ["Tek Tarih", "Tarih Aralığı", "Ay Seçimi"], horizontal=True)
+        st.markdown("**📅 Tarih**")
+        tarih_tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
         if tarih_tip == "Tek Tarih":
             ref_date = st.date_input("Tarih", datetime(2025, 7, 7))
             start_date = end_date = ref_date
         elif tarih_tip == "Tarih Aralığı":
-            col1, col2 = st.columns(2)
-            with col1: start_date = st.date_input("Başlangıç", datetime(2025, 7, 7))
-            with col2: end_date = st.date_input("Bitiş", datetime(2025, 7, 10))
+            c1, c2 = st.columns(2)
+            with c1: start_date = st.date_input("Başlangıç", datetime(2025, 7, 7))
+            with c2: end_date = st.date_input("Bitiş", datetime(2025, 7, 10))
         else:
-            col1, col2 = st.columns(2)
-            with col1: year = st.number_input("Yıl", 2020, 2030, 2025)
-            with col2: month = st.number_input("Ay", 1, 12, 7)
+            c1, c2 = st.columns(2)
+            with c1: year = st.number_input("Yıl", 2020, 2030, 2025)
+            with c2: month = st.number_input("Ay", 1, 12, 7)
             start_date = pd.Timestamp(year=year, month=month, day=1)
-            end_date = pd.Timestamp(year=year, month=month+1, day=1) - timedelta(days=1) if month < 12 else pd.Timestamp(year=year+1, month=1, day=1) - timedelta(days=1)
+            end_date = pd.Timestamp(year=year, month=month+1, day=1)-timedelta(days=1) if month<12 else pd.Timestamp(year=year+1, month=1, day=1)-timedelta(days=1)
         
-        gun_sayisi = len(get_business_days_between(pd.to_datetime(start_date), pd.to_datetime(end_date)))
-        tahmini_sure = gun_sayisi * len(hisseler) * 0.1 / MAX_WORKERS
-        st.caption(f"⏱️ ~{tahmini_sure:.0f}s | 📅 {gun_sayisi} işlem günü")
+        gun = len(get_business_days_between(pd.to_datetime(start_date), pd.to_datetime(end_date)))
+        st.caption(f"⏱️ ~{gun*len(hisseler)*0.1/MAX_WORKERS:.0f}s | {gun} işlem günü")
         
-        st.markdown("**🎯 Filtreler**")
-        st.markdown(f"Perf.Skor ≥ {RISK_FILTERS['Min_Perf_Score']} | Hcm/MA ≥ {RISK_FILTERS['Min_Volume_MA']} | RSI ≤ {RISK_FILTERS['Max_RSI']}")
-        
+        st.markdown(f"**🎯 Filtreler:** Perf≥{RISK_FILTERS['Min_Perf_Score']} | Hcm≥{RISK_FILTERS['Min_Volume_MA']} | RSI≤{RISK_FILTERS['Max_RSI']}")
         st.markdown("---")
         tarama_btn = st.button("🔍 TARAMAYI BAŞLAT", use_container_width=True)
     
     # Ana içerik
     if tarama_btn:
         start_time = time.time()
-        
-        with st.spinner('🔍 Paralel tarama yapılıyor...'):
+        with st.spinner('🔍 Paralel tarama...'):
             business_days = get_business_days_between(pd.to_datetime(start_date), pd.to_datetime(end_date))
-            
-            all_results = {}
-            all_signals = []
+            all_results, all_signals = {}, []
             progress_bar = st.progress(0)
             status_text = st.empty()
             
             for i, day in enumerate(business_days):
-                elapsed = time.time() - start_time
-                status_text.text(f"📅 {day.strftime('%Y-%m-%d')} | ⚡ Paralel | ⏱️ {elapsed:.0f}s | {i+1}/{len(business_days)}")
-                
+                status_text.text(f"📅 {day.strftime('%Y-%m-%d')} | ⚡ {time.time()-start_time:.0f}s | {i+1}/{len(business_days)}")
                 results = run_single_date_v3_parallel(hisseler, day)
                 if results:
                     all_results[day.strftime('%Y-%m-%d')] = results
                     all_signals.extend(results)
-                
                 progress_bar.progress((i+1)/len(business_days))
             
             progress_bar.empty()
             status_text.empty()
         
-        elapsed_total = time.time() - start_time
-        
         if all_signals:
             df_all = pd.DataFrame(all_signals)
-            
             st.markdown("### 📊 TARAMA SONUÇLARI")
-            st.caption(f"⚡ {elapsed_total:.1f}s | Paralel: {MAX_WORKERS} thread | 📱 Mobil uyumlu")
+            st.caption(f"⚡ {time.time()-start_time:.1f}s | {MAX_WORKERS} thread")
             
-            # Metrikler - None kontrolü
             rets_30 = df_all['+30_RET'].dropna()
             rets_60 = df_all['+60_RET'].dropna()
             
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1:
-                st.metric("Toplam Sinyal", len(all_signals))
-            with col2:
-                st.metric("30G Ort. Getiri", f"%{rets_30.mean():.1f}" if len(rets_30) > 0 else "N/A")
-            with col3:
-                win_30 = (rets_30 > 0).sum() if len(rets_30) > 0 else 0
-                st.metric("30G Kazanma", f"%{win_30/len(rets_30)*100:.0f}" if len(rets_30) > 0 else "N/A")
-            with col4:
-                st.metric("Ort. Perf.Skor", f"{df_all['Perf_Skor'].mean():.0f}")
-            with col5:
-                st.metric("60G Ort. Getiri", f"%{rets_60.mean():.1f}" if len(rets_60) > 0 else "N/A")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1: st.metric("Sinyal", len(all_signals))
+            with c2: st.metric("30G Ort.", f"%{rets_30.mean():.1f}" if len(rets_30)>0 else "N/A")
+            with c3: 
+                w30 = (rets_30>0).sum() if len(rets_30)>0 else 0
+                st.metric("30G Kazanma", f"%{w30/len(rets_30)*100:.0f}" if len(rets_30)>0 else "N/A")
+            with c4: st.metric("Perf.Skor", f"{df_all['Perf_Skor'].mean():.0f}")
+            with c5: st.metric("60G Ort.", f"%{rets_60.mean():.1f}" if len(rets_60)>0 else "N/A")
             
             st.markdown("---")
+            st.markdown("### 📈 GRAFİKLER")
             
-            # Grafikler
-            st.markdown("### 📈 PERFORMANS GRAFİKLERİ")
-            
-            tab1, tab2, tab3, tab4 = st.tabs(["📊 Genel", "🎯 Harita", "📉 Dağılım", "🗺️ Isı"])
-            
-            with tab1:
-                st.plotly_chart(create_performance_chart(all_signals), use_container_width=True)
-            with tab2:
-                st.plotly_chart(create_signal_scatter(all_signals), use_container_width=True)
-            with tab3:
-                st.plotly_chart(create_waterfall_chart(all_signals), use_container_width=True)
-            with tab4:
+            t1, t2, t3, t4 = st.tabs(["📊 Genel", "🎯 Harita", "📉 Dağılım", "🗺️ Isı"])
+            with t1: st.plotly_chart(create_performance_chart(all_signals), use_container_width=True)
+            with t2: st.plotly_chart(create_signal_scatter(all_signals), use_container_width=True)
+            with t3: st.plotly_chart(create_waterfall_chart(all_signals), use_container_width=True)
+            with t4:
                 fig = create_date_heatmap(all_results)
                 if fig: st.plotly_chart(fig, use_container_width=True)
             
             st.markdown("---")
-            
-            # Sinyal Tablosu
             st.markdown("### 📋 SİNYAL TABLOSU")
             
-            col1, col2, col3 = st.columns(3)
-            with col1: min_perf = st.slider("Min Perf.Skor", 0, 100, 65)
-            with col2: min_ret = st.slider("Min 30G (%)", -50, 200, -50)
-            with col3: sort_by = st.selectbox("Sırala", ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"])
+            c1, c2, c3 = st.columns(3)
+            with c1: min_perf = st.slider("Min Perf.Skor", 0, 100, 65)
+            with c2: min_ret = st.slider("Min 30G (%)", -50, 200, -50)
+            with c3: sort_by = st.selectbox("Sırala", ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"])
             
-            df_filtered = df_all[(df_all['Perf_Skor'] >= min_perf) & (df_all['+30_RET'].fillna(0) >= min_ret)]
-            df_filtered = df_filtered.sort_values(sort_by, ascending=False)
+            df_f = df_all[(df_all['Perf_Skor']>=min_perf)&(df_all['+30_RET'].fillna(0)>=min_ret)].sort_values(sort_by, ascending=False)
             
-            st.dataframe(
-                df_filtered[['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'Hacim/MA', 'MFI', '+5_RET', '+10_RET', '+15_RET', '+30_RET', '+60_RET', '+90_RET']],
-                use_container_width=True, height=400,
-                column_config={
-                    '+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
-                    '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%'),
-                    '+90_RET': st.column_config.NumberColumn('90G', format='%.1f%%'),
-                }
-            )
+            st.dataframe(df_f[['Hisse','Tarih','Kapanis','Perf_Skor','RSI','ADX','Hacim/MA','MFI','+5_RET','+10_RET','+15_RET','+30_RET','+60_RET','+90_RET']],
+                         use_container_width=True, height=400,
+                         column_config={'+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
+                                       '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%')})
             
-            # CSV İndir
-            st.markdown("---")
-            csv = df_filtered.to_csv(index=False)
-            st.download_button("📥 CSV İndir", csv, f"BIST_{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}.csv", "text/csv")
+            st.download_button("📥 CSV İndir", df_f.to_csv(index=False), f"BIST_{start_date.strftime('%Y%m%d')}.csv", "text/csv")
         else:
-            st.warning("⚠️ Hiç sinyal bulunamadı!")
+            st.warning("⚠️ Sinyal bulunamadı!")
     else:
-        # Başlangıç ekranı
         st.markdown("### 🚀 Hoş Geldiniz!")
-        st.markdown(f"""
-        **BIST Sinyal Tarama V3** - Profesyonel Teknik Analiz Aracı
-        
-        🔐 **Güvenli:** Sadece yetkili kullanıcılar
-        ⚡ **Hızlı:** {MAX_WORKERS}x paralel işlem
-        📱 **Mobil:** Telefon/tablet uyumlu
-        🌐 **İnternet:** Her yerden erişim
-        
-        **Başlamak için** sol panelden ayarları yapıp taramayı başlatın!
-        """)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1: st.metric("⚡ Hız", f"{MAX_WORKERS}x")
-        with col2: st.metric("🎯 Algoritma", "V3")
-        with col3: st.metric("📱 Mobil", "✓")
-        with col4: st.metric("🔐 Güvenlik", "Aktif")
+        st.markdown(f"⚡ {MAX_WORKERS}x Paralel | 🎯 V3 Algoritma | 📱 Mobil Uyumlu | 🔐 Güvenli")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.metric("⚡ Hız", f"{MAX_WORKERS}x")
+        with c2: st.metric("🎯 V3", "Aktif")
+        with c3: st.metric("📱 Mobil", "✓")
+        with c4: st.metric("🔐 SSL", "Var")
 
 if __name__ == "__main__":
     main()
