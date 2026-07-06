@@ -538,6 +538,10 @@ def main():
         st.markdown('<div class="main-header">📈 BIST SİNYAL TARAMA V3<br><small>Paralel İşlem | Gelişmiş Skor | Mobil Uyumlu</small></div>', unsafe_allow_html=True)
     with col2:
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
+            # Session state'i temizle
+            for key in list(st.session_state.keys()):
+                if key != 'authenticated':
+                    del st.session_state[key]
             st.session_state.authenticated = False
             st.rerun()
     
@@ -601,122 +605,138 @@ def main():
             st.session_state.all_signals = all_signals
             st.session_state.all_results = all_results
             st.session_state.df_all = pd.DataFrame(all_signals)
-            
-            df_all = st.session_state.df_all
-            st.markdown("### 📊 TARAMA SONUÇLARI")
-            st.caption(f"⚡ {time.time()-start_time:.1f}s | {MAX_WORKERS} thread")
-            
-            rets_30 = df_all['+30_RET'].dropna()
-            rets_60 = df_all['+60_RET'].dropna()
-            
-            c1, c2, c3, c4, c5 = st.columns(5)
-            with c1: st.metric("Sinyal", len(all_signals))
-            with c2: st.metric("30G Ort.", f"%{rets_30.mean():.1f}" if len(rets_30)>0 else "N/A")
-            with c3: 
-                w30 = (rets_30>0).sum() if len(rets_30)>0 else 0
-                st.metric("30G Kazanma", f"%{w30/len(rets_30)*100:.0f}" if len(rets_30)>0 else "N/A")
-            with c4: st.metric("Perf.Skor", f"{df_all['Perf_Skor'].mean():.0f}")
-            with c5: st.metric("60G Ort.", f"%{rets_60.mean():.1f}" if len(rets_60)>0 else "N/A")
-            
-            st.markdown("---")
-            st.markdown("### 📈 GRAFİKLER")
-            
-            t1, t2, t3, t4 = st.tabs(["📊 Genel", "🎯 Harita", "📉 Dağılım", "🗺️ Isı"])
-            with t1: st.plotly_chart(create_performance_chart(all_signals), use_container_width=True)
-            with t2: st.plotly_chart(create_signal_scatter(all_signals), use_container_width=True)
-            with t3: st.plotly_chart(create_waterfall_chart(all_signals), use_container_width=True)
-            with t4:
-                fig = create_date_heatmap(all_results)
-                if fig: st.plotly_chart(fig, use_container_width=True)
-            
-            st.markdown("---")
-            st.markdown("### 📋 SİNYAL TABLOSU")
-            
-            # Filtreleme için form kullan
-            with st.form(key="filter_form"):
-                st.markdown("**🔍 Filtreleme Seçenekleri**")
-                c1, c2, c3 = st.columns(3)
-                with c1: 
-                    min_perf = st.slider("Min Perf.Skor", 0, 100, 65, key="min_perf_slider")
-                with c2: 
-                    min_ret = st.slider("Min 30G (%)", -50, 200, -50, key="min_ret_slider")
-                with c3: 
-                    sort_by = st.selectbox("Sırala", ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"], key="sort_select")
-                
-                # Filtrele butonu
-                filter_btn = st.form_submit_button("🔄 FİLTRELE", use_container_width=True)
-            
-            # Session state'te filtre değerlerini sakla
-            if 'filter_values' not in st.session_state:
-                st.session_state.filter_values = {'min_perf': 65, 'min_ret': -50, 'sort_by': 'Perf_Skor'}
-            
-            # Filtrele butonuna basıldığında değerleri güncelle
-            if filter_btn:
-                st.session_state.filter_values = {
-                    'min_perf': min_perf,
-                    'min_ret': min_ret,
-                    'sort_by': sort_by
-                }
-            
-            # Güncel filtre değerlerini kullan
-            current_filters = st.session_state.filter_values
-            
-            # DataFrame'i filtrele
-            df_f = df_all[
-                (df_all['Perf_Skor'] >= current_filters['min_perf']) & 
-                (df_all['+30_RET'].fillna(0) >= current_filters['min_ret'])
-            ].sort_values(current_filters['sort_by'], ascending=False)
-            
-            st.markdown(f"**📊 Filtrelenmiş Sonuç: {len(df_f)} sinyal**")
-            
-            # Tabloyu göster
-            st.dataframe(
-                df_f[['Hisse','Tarih','Kapanis','Perf_Skor','RSI','ADX','Hacim/MA','MFI','+5_RET','+10_RET','+15_RET','+30_RET','+60_RET','+90_RET']],
-                use_container_width=True, 
-                height=400,
-                column_config={
-                    '+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
-                    '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%')
-                }
-            )
-            
-            # İndirme seçenekleri
-            st.markdown("---")
-            st.markdown("### 📥 VERİ İNDİR")
-            
-            col_down1, col_down2 = st.columns(2)
-            
-            with col_down1:
-                # CSV indir
-                csv = df_f.to_csv(index=False)
-                st.download_button(
-                    "📊 CSV İndir",
-                    csv,
-                    f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.csv",
-                    "text/csv",
-                    key='download-csv'
-                )
-            
-            with col_down2:
-                # Excel indir
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df_f.to_excel(writer, index=False, sheet_name='Sinyaller')
-                
-                excel_data = output.getvalue()
-                st.download_button(
-                    "📑 EXCEL İndir",
-                    excel_data,
-                    f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key='download-excel'
-                )
-            
-            st.info("💡 **Excel dosyası** doğrudan tablo formatında açılır. CSV dosyasını Excel'de açmak için: Veri > Metin/CSV'den > Dosyayı seçin > Ayırıcı olarak 'Virgül' seçin.")
-            
+            st.session_state.scan_completed = True
+            st.session_state.scan_time = time.time() - start_time
         else:
             st.warning("⚠️ Sinyal bulunamadı!")
-    else:
+            st.session_state.scan_completed = False
+    
+    # Eğer tarama yapılmışsa sonuçları göster (sayfa yenilense bile)
+    if st.session_state.get('scan_completed', False):
+        df_all = st.session_state.df_all
+        all_signals = st.session_state.all_signals
+        all_results = st.session_state.all_results
+        
+        st.markdown("### 📊 TARAMA SONUÇLARI")
+        st.caption(f"⚡ {st.session_state.scan_time:.1f}s | {MAX_WORKERS} thread")
+        
+        rets_30 = df_all['+30_RET'].dropna()
+        rets_60 = df_all['+60_RET'].dropna()
+        
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1: st.metric("Sinyal", len(all_signals))
+        with c2: st.metric("30G Ort.", f"%{rets_30.mean():.1f}" if len(rets_30)>0 else "N/A")
+        with c3: 
+            w30 = (rets_30>0).sum() if len(rets_30)>0 else 0
+            st.metric("30G Kazanma", f"%{w30/len(rets_30)*100:.0f}" if len(rets_30)>0 else "N/A")
+        with c4: st.metric("Perf.Skor", f"{df_all['Perf_Skor'].mean():.0f}")
+        with c5: st.metric("60G Ort.", f"%{rets_60.mean():.1f}" if len(rets_60)>0 else "N/A")
+        
+        st.markdown("---")
+        st.markdown("### 📈 GRAFİKLER")
+        
+        t1, t2, t3, t4 = st.tabs(["📊 Genel", "🎯 Harita", "📉 Dağılım", "🗺️ Isı"])
+        with t1: st.plotly_chart(create_performance_chart(all_signals), use_container_width=True)
+        with t2: st.plotly_chart(create_signal_scatter(all_signals), use_container_width=True)
+        with t3: st.plotly_chart(create_waterfall_chart(all_signals), use_container_width=True)
+        with t4:
+            fig = create_date_heatmap(all_results)
+            if fig: st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("### 📋 SİNYAL TABLOSU")
+        
+        # Filtreleme - Form KULLANMADAN, doğrudan slider'larla
+        st.markdown("**🔍 Filtreleme Seçenekleri**")
+        
+        # Session state'te filtre değerlerini sakla
+        if 'filter_values' not in st.session_state:
+            st.session_state.filter_values = {'min_perf': 65, 'min_ret': -50, 'sort_by': 'Perf_Skor'}
+        
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            min_perf = st.slider(
+                "Min Perf.Skor", 
+                0, 100, 
+                st.session_state.filter_values['min_perf'], 
+                key="min_perf_slider"
+            )
+        with c2:
+            min_ret = st.slider(
+                "Min 30G (%)", 
+                -50, 200, 
+                st.session_state.filter_values['min_ret'], 
+                key="min_ret_slider"
+            )
+        with c3:
+            sort_by = st.selectbox(
+                "Sırala", 
+                ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"], 
+                index=["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"].index(st.session_state.filter_values['sort_by']),
+                key="sort_select"
+            )
+        
+        # Slider değiştiğinde session state'i güncelle
+        st.session_state.filter_values = {
+            'min_perf': min_perf,
+            'min_ret': min_ret,
+            'sort_by': sort_by
+        }
+        
+        # DataFrame'i filtrele
+        df_f = df_all[
+            (df_all['Perf_Skor'] >= st.session_state.filter_values['min_perf']) & 
+            (df_all['+30_RET'].fillna(0) >= st.session_state.filter_values['min_ret'])
+        ].sort_values(st.session_state.filter_values['sort_by'], ascending=False)
+        
+        st.markdown(f"**📊 Filtrelenmiş Sonuç: {len(df_f)} / {len(df_all)} sinyal**")
+        
+        # Tabloyu göster
+        st.dataframe(
+            df_f[['Hisse','Tarih','Kapanis','Perf_Skor','RSI','ADX','Hacim/MA','MFI','+5_RET','+10_RET','+15_RET','+30_RET','+60_RET','+90_RET']],
+            use_container_width=True, 
+            height=400,
+            column_config={
+                '+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
+                '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%')
+            }
+        )
+        
+        # İndirme seçenekleri
+        st.markdown("---")
+        st.markdown("### 📥 VERİ İNDİR")
+        
+        col_down1, col_down2 = st.columns(2)
+        
+        with col_down1:
+            # CSV indir
+            csv = df_f.to_csv(index=False)
+            st.download_button(
+                "📊 CSV İndir",
+                csv,
+                f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.csv",
+                "text/csv",
+                key='download-csv'
+            )
+        
+        with col_down2:
+            # Excel indir
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_f.to_excel(writer, index=False, sheet_name='Sinyaller')
+            
+            excel_data = output.getvalue()
+            st.download_button(
+                "📑 EXCEL İndir",
+                excel_data,
+                f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key='download-excel'
+            )
+        
+        st.info("💡 **Excel dosyası** doğrudan tablo formatında açılır. CSV dosyasını Excel'de açmak için: Veri > Metin/CSV'den > Dosyayı seçin > Ayırıcı olarak 'Virgül' seçin.")
+    
+    elif not st.session_state.get('scan_completed', False) and not tarama_btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown(f"⚡ {MAX_WORKERS}x Paralel | 🎯 V3 Algoritma | 📱 Mobil Uyumlu | 🔐 Güvenli")
         c1, c2, c3, c4 = st.columns(4)
