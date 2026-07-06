@@ -9,180 +9,55 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from io import BytesIO
 import calendar
+import locale
 
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="BIST Sinyal Tarama V3", page_icon="📈", layout="wide")
 
-# ===================== TÜRKÇE TAKVİM =====================
+# ===================== TÜRKÇE TARİH SEÇİCİ =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
 TURKISH_DAYS = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"]
 
-def turkish_calendar(label, default_date=None, key="tcal"):
-    """Türkçe takvim - gg.aa.yyyy giriş + görsel takvim"""
-    
+def turkish_date_picker(label, default_date=None, key="tcal", min_date=None, max_date=None):
+    """
+    Türkçe tarih seçici - Streamlit date_input + manuel gg.aa.yyyy girişi
+    Tam senkronize çalışır, Windows tarzı takvim deneyimi sunar
+    """
     if default_date is None:
         default_date = datetime.now().date()
     elif hasattr(default_date, 'date'):
         default_date = default_date.date()
     
+    # Session state'te seçili tarihi tut
     state_key = f"{key}_selected"
-    month_key = f"{key}_month"
-    year_key = f"{key}_year"
-    
     if state_key not in st.session_state:
         st.session_state[state_key] = default_date
-        st.session_state[month_key] = default_date.month
-        st.session_state[year_key] = default_date.year
     
     st.markdown(f"**{label}**")
     
-    # ---- MANUEL GİRİŞ (gg.aa.yyyy) ----
-    c1, c2 = st.columns([3, 1])
+    # Streamlit'in native date_input'unu kullan
+    # format="DD.MM.YYYY" ile Türkçe format desteği
+    selected_date = st.date_input(
+        "Tarih seçin veya yazın (gg.aa.yyyy)",
+        value=st.session_state[state_key],
+        min_value=min_date,
+        max_value=max_date,
+        format="DD.MM.YYYY",
+        key=f"{key}_datepicker"
+    )
     
-    with c1:
-        tarih_str = st.text_input(
-            "📝 Tarih (gg.aa.yyyy)",
-            value=st.session_state[state_key].strftime('%d.%m.%Y'),
-            key=f"{key}_manuel",
-            placeholder="Örn: 15.07.2025"
-        )
-    
-    with c2:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("✅ Git", key=f"{key}_git", use_container_width=True):
-            try:
-                # gg.aa.yyyy veya gg/aa/yyyy formatını parse et
-                tarih_str = tarih_str.replace('/', '.').strip()
-                parts = tarih_str.split('.')
-                if len(parts) == 3:
-                    gun, ay, yil = int(parts[0]), int(parts[1]), int(parts[2])
-                    max_day = calendar.monthrange(yil, ay)[1]
-                    gun = min(gun, max_day)
-                    st.session_state[state_key] = datetime(yil, ay, gun).date()
-                    st.session_state[month_key] = ay
-                    st.session_state[year_key] = yil
-                    st.rerun()
-                else:
-                    st.error("Format: gg.aa.yyyy (örn: 15.07.2025)")
-            except:
-                st.error("Geçersiz tarih! Format: gg.aa.yyyy")
-    
-    # ---- TAKVİM GÖRSELİ ----
-    st.markdown("---")
-    
-    # Navigasyon
-    nav1, nav2, nav3 = st.columns([1, 4, 1])
-    with nav1:
-        if st.button("◀ Önceki Ay", key=f"{key}_prev", use_container_width=True):
-            if st.session_state[month_key] == 1:
-                st.session_state[month_key] = 12
-                st.session_state[year_key] -= 1
-            else:
-                st.session_state[month_key] -= 1
-            st.rerun()
-    with nav2:
-        st.markdown(f"<h3 style='text-align:center;margin:0;'>{TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}</h3>", unsafe_allow_html=True)
-    with nav3:
-        if st.button("Sonraki Ay ▶", key=f"{key}_next", use_container_width=True):
-            if st.session_state[month_key] == 12:
-                st.session_state[month_key] = 1
-                st.session_state[year_key] += 1
-            else:
-                st.session_state[month_key] += 1
-            st.rerun()
-    
-    # Bugün butonu
-    if st.button("🏠 Bugüne Git", key=f"{key}_today", use_container_width=True):
-        today = datetime.now().date()
-        st.session_state[state_key] = today
-        st.session_state[month_key] = today.month
-        st.session_state[year_key] = today.year
+    # Tarih değiştiyse session state'i güncelle
+    if selected_date != st.session_state[state_key]:
+        st.session_state[state_key] = selected_date
         st.rerun()
     
-    # Takvim tablosu
-    cal = calendar.monthcalendar(st.session_state[year_key], st.session_state[month_key])
-    today = datetime.now().date()
-    selected = st.session_state[state_key]
+    # Seçili tarihi göster
+    gun_adi = TURKISH_DAYS[st.session_state[state_key].weekday()]
+    ay_adi = TURKISH_MONTHS[st.session_state[state_key].month - 1]
+    st.caption(f"📅 **{st.session_state[state_key].day} {ay_adi} {st.session_state[state_key].year} ({gun_adi})**")
     
-    # CSS
-    st.markdown("""
-    <style>
-        .cal-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-        }
-        .cal-table th {
-            background: #667eea;
-            color: white;
-            padding: 12px 8px;
-            text-align: center;
-            font-weight: 600;
-            font-size: 13px;
-        }
-        .cal-table td {
-            text-align: center;
-            padding: 10px 5px;
-            border: 1px solid #e9ecef;
-            font-weight: 500;
-        }
-        .cal-table td.selected {
-            background: #667eea !important;
-            color: white !important;
-            font-weight: bold;
-        }
-        .cal-table td.today {
-            border: 2px solid #28a745 !important;
-        }
-        .cal-table td.weekend {
-            color: #dc3545;
-        }
-        .cal-table td.empty {
-            background: #f8f9fa;
-            border: 1px solid #f0f0f0;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Tabloyu oluştur
-    table = '<table class="cal-table"><thead><tr>'
-    for day_name in TURKISH_DAYS:
-        table += f'<th>{day_name}</th>'
-    table += '</tr></thead><tbody>'
-    
-    for week in cal:
-        table += '<tr>'
-        for day in week:
-            if day == 0:
-                table += '<td class="empty"></td>'
-            else:
-                date = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
-                classes = []
-                
-                if date == selected:
-                    classes.append('selected')
-                if date == today:
-                    classes.append('today')
-                if date.weekday() >= 5:
-                    classes.append('weekend')
-                
-                class_str = ' '.join(classes)
-                table += f'<td class="{class_str}">{day}</td>'
-        table += '</tr>'
-    
-    table += '</tbody></table>'
-    st.markdown(table, unsafe_allow_html=True)
-    
-    # Seçili tarih
-    selected = st.session_state[state_key]
-    gun_adi = TURKISH_DAYS[selected.weekday()]
-    st.success(f"✅ **Seçilen: {selected.strftime('%d %B %Y')} ({gun_adi})**")
-    
-    return selected
+    return st.session_state[state_key]
 
 # ===================== GİRİŞ =====================
 def check_password():
@@ -432,17 +307,25 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih","Aralık","Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = turkish_calendar("Tarih Seçin", datetime(2025,7,7), "tek")
+            d = turkish_date_picker("Tarih Seçin", datetime(2025,7,7), "tek")
             start = end = d
         elif tip == "Aralık":
-            start = turkish_calendar("Başlangıç", datetime(2025,7,7), "bas")
-            end = turkish_calendar("Bitiş", datetime(2025,7,10), "bit")
+            start = turkish_date_picker("Başlangıç", datetime(2025,7,7), "bas")
+            end = turkish_date_picker("Bitiş", datetime(2025,7,10), "bit")
         else:
+            # Ay seçimi için özel bir yapı
             c1,c2 = st.columns(2)
-            with c1: y = st.selectbox("Yıl", range(2020,2031), index=5, key="yy")
-            with c2: m = st.selectbox("Ay", range(1,13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6, key="mm")
+            with c1: 
+                y = st.selectbox("Yıl", range(2020,2031), index=5, key="yy")
+            with c2: 
+                m = st.selectbox("Ay", range(1,13), 
+                                format_func=lambda x: TURKISH_MONTHS[x-1], 
+                                index=6, key="mm")
             start = datetime(y,m,1).date()
             end = (datetime(y,m+1,1) if m<12 else datetime(y+1,1,1)).date() - timedelta(days=1)
+            
+            # Ay seçiminde sadece bilgi gösterimi
+            st.info(f"📅 **{TURKISH_MONTHS[m-1]} {y}** taranacak\n({start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')})")
         
         days = len(get_bdays(pd.to_datetime(start), pd.to_datetime(end)))
         st.caption(f"⏱️ ~{days*len(symbols)*0.1/WORKERS:.0f}s | {days} işlem günü")
