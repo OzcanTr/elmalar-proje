@@ -9,6 +9,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from io import BytesIO
 
 warnings.filterwarnings('ignore')
 
@@ -596,7 +597,12 @@ def main():
             status_text.empty()
         
         if all_signals:
-            df_all = pd.DataFrame(all_signals)
+            # Sonuçları session_state'e kaydet
+            st.session_state.all_signals = all_signals
+            st.session_state.all_results = all_results
+            st.session_state.df_all = pd.DataFrame(all_signals)
+            
+            df_all = st.session_state.df_all
             st.markdown("### 📊 TARAMA SONUÇLARI")
             st.caption(f"⚡ {time.time()-start_time:.1f}s | {MAX_WORKERS} thread")
             
@@ -626,19 +632,88 @@ def main():
             st.markdown("---")
             st.markdown("### 📋 SİNYAL TABLOSU")
             
-            c1, c2, c3 = st.columns(3)
-            with c1: min_perf = st.slider("Min Perf.Skor", 0, 100, 65)
-            with c2: min_ret = st.slider("Min 30G (%)", -50, 200, -50)
-            with c3: sort_by = st.selectbox("Sırala", ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"])
+            # Filtreleme için form kullan
+            with st.form(key="filter_form"):
+                st.markdown("**🔍 Filtreleme Seçenekleri**")
+                c1, c2, c3 = st.columns(3)
+                with c1: 
+                    min_perf = st.slider("Min Perf.Skor", 0, 100, 65, key="min_perf_slider")
+                with c2: 
+                    min_ret = st.slider("Min 30G (%)", -50, 200, -50, key="min_ret_slider")
+                with c3: 
+                    sort_by = st.selectbox("Sırala", ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"], key="sort_select")
+                
+                # Filtrele butonu
+                filter_btn = st.form_submit_button("🔄 FİLTRELE", use_container_width=True)
             
-            df_f = df_all[(df_all['Perf_Skor']>=min_perf)&(df_all['+30_RET'].fillna(0)>=min_ret)].sort_values(sort_by, ascending=False)
+            # Session state'te filtre değerlerini sakla
+            if 'filter_values' not in st.session_state:
+                st.session_state.filter_values = {'min_perf': 65, 'min_ret': -50, 'sort_by': 'Perf_Skor'}
             
-            st.dataframe(df_f[['Hisse','Tarih','Kapanis','Perf_Skor','RSI','ADX','Hacim/MA','MFI','+5_RET','+10_RET','+15_RET','+30_RET','+60_RET','+90_RET']],
-                         use_container_width=True, height=400,
-                         column_config={'+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
-                                       '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%')})
+            # Filtrele butonuna basıldığında değerleri güncelle
+            if filter_btn:
+                st.session_state.filter_values = {
+                    'min_perf': min_perf,
+                    'min_ret': min_ret,
+                    'sort_by': sort_by
+                }
             
-            st.download_button("📥 CSV İndir", df_f.to_csv(index=False), f"BIST_{start_date.strftime('%Y%m%d')}.csv", "text/csv")
+            # Güncel filtre değerlerini kullan
+            current_filters = st.session_state.filter_values
+            
+            # DataFrame'i filtrele
+            df_f = df_all[
+                (df_all['Perf_Skor'] >= current_filters['min_perf']) & 
+                (df_all['+30_RET'].fillna(0) >= current_filters['min_ret'])
+            ].sort_values(current_filters['sort_by'], ascending=False)
+            
+            st.markdown(f"**📊 Filtrelenmiş Sonuç: {len(df_f)} sinyal**")
+            
+            # Tabloyu göster
+            st.dataframe(
+                df_f[['Hisse','Tarih','Kapanis','Perf_Skor','RSI','ADX','Hacim/MA','MFI','+5_RET','+10_RET','+15_RET','+30_RET','+60_RET','+90_RET']],
+                use_container_width=True, 
+                height=400,
+                column_config={
+                    '+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
+                    '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%')
+                }
+            )
+            
+            # İndirme seçenekleri
+            st.markdown("---")
+            st.markdown("### 📥 VERİ İNDİR")
+            
+            col_down1, col_down2 = st.columns(2)
+            
+            with col_down1:
+                # CSV indir
+                csv = df_f.to_csv(index=False)
+                st.download_button(
+                    "📊 CSV İndir",
+                    csv,
+                    f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.csv",
+                    "text/csv",
+                    key='download-csv'
+                )
+            
+            with col_down2:
+                # Excel indir
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df_f.to_excel(writer, index=False, sheet_name='Sinyaller')
+                
+                excel_data = output.getvalue()
+                st.download_button(
+                    "📑 EXCEL İndir",
+                    excel_data,
+                    f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key='download-excel'
+                )
+            
+            st.info("💡 **Excel dosyası** doğrudan tablo formatında açılır. CSV dosyasını Excel'de açmak için: Veri > Metin/CSV'den > Dosyayı seçin > Ayırıcı olarak 'Virgül' seçin.")
+            
         else:
             st.warning("⚠️ Sinyal bulunamadı!")
     else:
