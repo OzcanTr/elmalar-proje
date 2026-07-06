@@ -28,9 +28,17 @@ def check_password():
     CORRECT_USERNAME = "ADMIN"
     CORRECT_PASSWORD = "Elma*"
     
+    # Session state'leri başlat
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     
+    if "login_error" not in st.session_state:
+        st.session_state.login_error = False
+    
+    if "login_counter" not in st.session_state:
+        st.session_state.login_counter = 0
+    
+    # Zaten giriş yapılmışsa ana sayfaya geç
     if st.session_state.authenticated:
         return True
     
@@ -74,24 +82,50 @@ def check_password():
     st.markdown('<div class="login-title">BIST Sinyal Tarama</div>', unsafe_allow_html=True)
     st.markdown('<div class="login-subtitle">Version 3.0 | Yetkili Giriş</div>', unsafe_allow_html=True)
     
-    # Mesajlar için placeholder
+    # Mesaj placeholder'ı
     message_placeholder = st.empty()
     
-    username = st.text_input("👤 Kullanıcı Adı", key="user_input", placeholder="Kullanıcı adınız")
-    password = st.text_input("🔒 Şifre", type="password", key="pass_input", placeholder="Şifreniz")
+    # Input'lar (her denemede yeni key ile)
+    username = st.text_input(
+        "👤 Kullanıcı Adı", 
+        key=f"user_{st.session_state.login_counter}", 
+        placeholder="Kullanıcı adınız"
+    )
+    password = st.text_input(
+        "🔒 Şifre", 
+        type="password", 
+        key=f"pass_{st.session_state.login_counter}", 
+        placeholder="Şifreniz"
+    )
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        login_button = st.button("🚀 GİRİŞ YAP", use_container_width=True, type="primary")
+        login_button = st.button(
+            "🚀 GİRİŞ YAP", 
+            use_container_width=True, 
+            type="primary",
+            key=f"btn_{st.session_state.login_counter}"
+        )
     
     if login_button:
         if username == CORRECT_USERNAME and password == CORRECT_PASSWORD:
-            message_placeholder.success("✅ Giriş başarılı! Yönlendiriliyorsunuz...")
+            # Başarılı giriş
+            st.session_state.login_error = False
             st.session_state.authenticated = True
+            message_placeholder.success("✅ Giriş başarılı! Yönlendiriliyorsunuz...")
             time.sleep(0.5)
             st.rerun()
         else:
-            message_placeholder.error("❌ Hatalı kullanıcı adı veya şifre!")
+            # Hatalı giriş
+            st.session_state.login_error = True
+            st.session_state.login_counter += 1
+            message_placeholder.error("❌ Hatalı kullanıcı adı veya şifre! Lütfen tekrar deneyin.")
+            time.sleep(0.3)
+            st.rerun()
+    
+    # Önceki denemede hata varsa göster (sayfa yenilendiğinde)
+    if st.session_state.login_error and not login_button:
+        message_placeholder.error("❌ Hatalı kullanıcı adı veya şifre! Lütfen tekrar deneyin.")
     
     st.markdown('</div>', unsafe_allow_html=True)
     return False
