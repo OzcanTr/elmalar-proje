@@ -122,7 +122,7 @@ def get_lists():
         return {'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
 
 def get_data(symbol, date_str, debug_log):
-    """Veri çekme - debug log ile"""
+    """Veri çekme - DataFrame garantili"""
     try:
         ref = pd.to_datetime(date_str)
         sym = symbol.upper().strip()
@@ -135,38 +135,93 @@ def get_data(symbol, date_str, debug_log):
         df = ticker.history(start=start, end=end)
         
         if df is None or len(df) == 0:
-            debug_log.append(f"❌ {sym}: veri yok")
             return None
         
-        df = df.reset_index()
-        date_col = next((c for c in df.columns if 'date' in c.lower() or 'index' in c.lower()), None)
-        df = df.rename(columns={date_col:'Date'} if date_col else {'index':'Date'})
-        df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+        # DataFrame'e dönüştür (numpy array ise)
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
         
+        # Kolon isimlerini kontrol et ve düzelt
+        if df.index.name is not None or not isinstance(df.index, pd.RangeIndex):
+            df = df.reset_index()
+        
+        # Tarih kolonunu bul
+        date_col = None
+        for col in df.columns:
+            if 'date' in str(col).lower() or 'index' in str(col).lower() or col == 0:
+                date_col = col
+                break
+        
+        if date_col is not None:
+            df = df.rename(columns={date_col: 'Date'})
+        else:
+            # Eğer ilk kolon tarih gibi görünüyorsa
+            first_col = df.columns[0]
+            try:
+                pd.to_datetime(df[first_col])
+                df = df.rename(columns={first_col: 'Date'})
+            except:
+                return None
+        
+        # Tarihi datetime'a çevir
+        df['Date'] = pd.to_datetime(df['Date'])
+        if hasattr(df['Date'].iloc[0], 'tz') and df['Date'].iloc[0].tz is not None:
+            df['Date'] = df['Date'].dt.tz_localize(None)
+        
+        # Diğer kolonları eşleştir
         col_map = {}
-        for c in df.columns:
-            cl = c.lower()
-            if 'open' in cl: col_map[c] = 'Open'
-            elif 'high' in cl: col_map[c] = 'High'
-            elif 'low' in cl: col_map[c] = 'Low'
-            elif 'close' in cl or 'kapanis' in cl: col_map[c] = 'Close'
-            elif 'volume' in cl or 'hacim' in cl: col_map[c] = 'Volume'
+        for col in df.columns:
+            col_str = str(col).lower()
+            if 'open' in col_str: col_map[col] = 'Open'
+            elif 'high' in col_str: col_map[col] = 'High'
+            elif 'low' in col_str: col_map[col] = 'Low'
+            elif 'close' in col_str or 'kapanis' in col_str: col_map[col] = 'Close'
+            elif 'volume' in col_str or 'hacim' in col_str: col_map[col] = 'Volume'
         
-        df = df.rename(columns=col_map)
+        # Eğer otomatik eşleştirme çalışmazsa, pozisyona göre eşleştir
+        if 'Close' not in col_map.values():
+            numeric_cols = [col for col in df.columns if col != 'Date']
+            if len(numeric_cols) >= 4:
+                df = df.rename(columns={
+                    df.columns[0]: 'Date',
+                    numeric_cols[0]: 'Open',
+                    numeric_cols[1]: 'High', 
+                    numeric_cols[2]: 'Low',
+                    numeric_cols[3]: 'Close'
+                })
+                if len(numeric_cols) >= 5:
+                    df = df.rename(columns={numeric_cols[4]: 'Volume'})
+        else:
+            df = df.rename(columns=col_map)
         
-        if not all(c in df.columns for c in ['Date','Open','High','Low','Close']):
-            debug_log.append(f"❌ {sym}: eksik kolonlar - {df.columns.tolist()}")
+        # Gerekli kolonları kontrol et
+        required = ['Date', 'Open', 'High', 'Low', 'Close']
+        if not all(c in df.columns for c in required):
             return None
+        
         if 'Volume' not in df.columns:
             df['Volume'] = 0
         
-        result = df[['Date','Open','High','Low','Close','Volume']].sort_values('Date').reset_index(drop=True)
+        # Sadece gerekli kolonları al ve sırala
+        result = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        result = result.sort_values('Date').reset_index(drop=True)
+        
         return result
     except Exception as e:
         debug_log.append(f"❌ {sym} get_data hata: {str(e)}")
         return None
 
 def calc_indicators(df):
+    """İndikatörleri hesapla - DataFrame garantisi ile"""
+    # DataFrame olduğundan emin ol
+    if not isinstance(df, pd.DataFrame):
+        return df
+    
+    # Kolonları float'a çevir (numpy array sorununu çözmek için)
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
     for p in [5,10,20,50,100,200]:
         df[f'MA{p}'] = df['Close'].rolling(p).mean()
         df[f'VMA{p}'] = df['Volume'].rolling(p).mean()
@@ -241,41 +296,38 @@ def check_signal(df, i):
         return False
 
 def scan_stock(sym, date_str, debug_log):
-    """Hisse tarama - debug log ile"""
+    """Hisse tarama"""
     try:
         df = get_data(sym, date_str, debug_log)
         if df is None: 
+            return None
+        
+        # DataFrame tipini kontrol et
+        if not isinstance(df, pd.DataFrame):
+            debug_log.append(f"❌ {sym}: get_data DataFrame döndürmedi, tip: {type(df)}")
             return None
         
         df = calc_indicators(df)
         ref = pd.to_datetime(date_str).normalize()
         dates = df['Date'].dt.normalize()
         
-        # Tarihi bul - tam eşleşme veya sonraki ilk gün
         idx = next((i for i,d in enumerate(dates) if d>=ref), None)
         
         if idx is None:
-            debug_log.append(f"⚠️ {sym}: {ref.date()} sonrası veri yok (son veri: {dates.max().date()})")
             return None
         
-        # İndikatör değerlerini kontrol et
         rsi_val = df['RSI'].iloc[idx]
         adx_val = df['ADX'].iloc[idx]
         vol_val = df['VolRatio'].iloc[idx]
         mfi_val = df['MFI'].iloc[idx]
-        stoch_val = df['Stochastic'].iloc[idx]
         
         if pd.isna(df['MA200'].iloc[idx]):
-            debug_log.append(f"⚠️ {sym}: MA200 NaN")
             return None
         
         ma200_val = df['MA200'].iloc[idx]
         close_val = df['Close'].iloc[idx]
-        ma200_diff = ((close_val - ma200_val) / ma200_val) * 100
         
-        # Sinyal kontrolü
         if not check_signal(df, idx):
-            debug_log.append(f"❌ {sym}: sinyal yok - RSI:{rsi_val:.1f} ADX:{adx_val:.1f} Vol:{vol_val:.2f} MFI:{mfi_val:.1f} Stoch:{stoch_val:.1f} MA200diff:{ma200_diff:.1f}%")
             return None
         
         cur = close_val
@@ -288,38 +340,22 @@ def scan_stock(sym, date_str, debug_log):
             if idx+s < len(df):
                 r[f'+{s}_RET'] = round(((df['Close'].iloc[idx+s]-cur)/cur)*100, 2)
         
-        # Filtre kontrolü
-        if r['RSI']>FILTERS['Max_RSI']:
-            debug_log.append(f"❌ {sym}: RSI filtresi ({r['RSI']:.1f} > {FILTERS['Max_RSI']})")
-            return None
-        if r['ADX']>FILTERS['Max_ADX']:
-            debug_log.append(f"❌ {sym}: ADX filtresi ({r['ADX']:.1f} > {FILTERS['Max_ADX']})")
-            return None
-        if r['VolRatio']<FILTERS['Min_Volume_MA']:
-            debug_log.append(f"❌ {sym}: VolRatio filtresi ({r['VolRatio']:.2f} < {FILTERS['Min_Volume_MA']})")
-            return None
-        if r['MFI']>FILTERS['Max_MFI']:
-            debug_log.append(f"❌ {sym}: MFI filtresi ({r['MFI']:.1f} > {FILTERS['Max_MFI']})")
-            return None
-        if r['Perf_Skor']<FILTERS['Min_Perf_Score']:
-            debug_log.append(f"❌ {sym}: Perf_Skor filtresi ({r['Perf_Skor']} < {FILTERS['Min_Perf_Score']})")
-            return None
+        if r['RSI']>FILTERS['Max_RSI'] or r['ADX']>FILTERS['Max_ADX']: return None
+        if r['VolRatio']<FILTERS['Min_Volume_MA'] or r['MFI']>FILTERS['Max_MFI']: return None
+        if r['Perf_Skor']<FILTERS['Min_Perf_Score']: return None
         
-        debug_log.append(f"✅✅✅ {sym}: SİNYAL! RSI:{rsi_val:.1f} ADX:{adx_val:.1f} Vol:{vol_val:.2f} MFI:{mfi_val:.1f} Skor:{r['Perf_Skor']}")
         return r
     except Exception as e:
         debug_log.append(f"❌ {sym} scan_stock hata: {str(e)}")
         return None
 
 def run_scan(symbols, date, debug_log):
-    """Tarama - thread-safe debug log ile"""
+    """Tarama"""
     results = []
     if hasattr(date, 'strftime'):
         ds = date.strftime('%Y-%m-%d')
     else:
         ds = str(date)
-    
-    debug_log.append(f"🔍 Tarama başladı: {len(symbols)} hisse, tarih={ds}")
     
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         futures = {ex.submit(scan_stock, s, ds, debug_log):s for s in symbols}
@@ -331,7 +367,6 @@ def run_scan(symbols, date, debug_log):
             except Exception as e:
                 debug_log.append(f"❌ Future hata: {str(e)}")
     
-    debug_log.append(f"📊 Toplam {len(results)} sinyal bulundu")
     return results
 
 def get_bdays(start, end):
@@ -347,7 +382,6 @@ def main():
     if not check_password():
         return
     
-    # Debug modu
     if "debug_mode" not in st.session_state:
         st.session_state.debug_mode = False
     if "debug_logs" not in st.session_state:
@@ -368,7 +402,7 @@ def main():
                 st.rerun()
     
     if st.session_state.debug_mode:
-        st.warning("🐛 DEBUG MODU AKTİF - Tarama sonrası detaylı log gösterilecek")
+        st.warning("🐛 DEBUG MODU AKTİF")
     
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
@@ -404,7 +438,7 @@ def main():
     
     if btn:
         t0 = time.time()
-        st.session_state.debug_logs = []  # Debug log'ları temizle
+        st.session_state.debug_logs = []
         
         with st.spinner('🔍 Taranıyor...'):
             bdays = get_bdays(pd.to_datetime(start), pd.to_datetime(end))
@@ -414,7 +448,6 @@ def main():
             
             for i, day in enumerate(bdays):
                 txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{len(bdays)}")
-                st.session_state.debug_logs.append(f"\n--- Gün {i+1}: {day.strftime('%d.%m.%Y')} ---")
                 res = run_scan(symbols, day, st.session_state.debug_logs)
                 if res: 
                     all_signals.extend(res)
@@ -430,24 +463,10 @@ def main():
             st.warning("⚠️ Sinyal bulunamadı!")
             st.session_state.ok = False
         
-        # Debug log'ları göster
         if st.session_state.debug_mode and st.session_state.debug_logs:
             with st.expander("🐛 DEBUG LOGLARI", expanded=True):
-                sinyal_sayisi = sum(1 for log in st.session_state.debug_logs if "SİNYAL!" in log)
-                veri_yok = sum(1 for log in st.session_state.debug_logs if "veri yok" in log)
-                sinyal_yok = sum(1 for log in st.session_state.debug_logs if "sinyal yok" in log)
-                filtre = sum(1 for log in st.session_state.debug_logs if "filtresi" in log)
-                hata = sum(1 for log in st.session_state.debug_logs if "hata" in log.lower())
-                
-                st.markdown(f"""
-                **Özet:**
-                - ✅ Sinyal bulunan: {sinyal_sayisi}
-                - ❌ Veri çekilemeyen: {veri_yok}
-                - ❌ Sinyal koşulu sağlanmayan: {sinyal_yok}
-                - ❌ Filtreden geçemeyen: {filtre}
-                - ⚠️ Hata: {hata}
-                """)
-                
+                hata_sayisi = sum(1 for log in st.session_state.debug_logs if "hata" in log.lower())
+                st.metric("Toplam Hata", hata_sayisi)
                 st.text_area("Detaylı Log", "\n".join(st.session_state.debug_logs), height=400)
     
     if st.session_state.get('ok'):
