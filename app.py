@@ -5,8 +5,6 @@ import borsapy as bp
 from datetime import datetime, timedelta
 import warnings
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from io import BytesIO
@@ -16,20 +14,19 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="BIST Sinyal Tarama V3", page_icon="📈", layout="wide")
 
-# ===================== TÜRKÇE TAKVİM BİLEŞENİ =====================
+# ===================== TÜRKÇE TAKVİM =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
 TURKISH_DAYS = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"]
 
 def turkish_calendar(label, default_date=None, key="tcal"):
     """
-    Tam Türkçe takvim bileşeni - Tüm ay görünümünde, tıklanabilir günler
+    Türkçe takvim - Çalışan butonlarla gün seçimi
     """
     if default_date is None:
         default_date = datetime.now().date()
     elif hasattr(default_date, 'date'):
         default_date = default_date.date()
     
-    # Session state'de seçili tarihi sakla
     state_key = f"{key}_selected"
     month_key = f"{key}_month"
     year_key = f"{key}_year"
@@ -41,11 +38,11 @@ def turkish_calendar(label, default_date=None, key="tcal"):
     
     st.markdown(f"**{label}**")
     
-    # Ay ve Yıl navigasyonu
-    col1, col2, col3, col4 = st.columns([1, 1.5, 1, 1])
+    # Ay/Yıl navigasyonu
+    c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
     
-    with col1:
-        if st.button("◀ Önceki Ay", key=f"{key}_prev", use_container_width=True):
+    with c1:
+        if st.button("◀", key=f"{key}_prev", use_container_width=True, help="Önceki Ay"):
             if st.session_state[month_key] == 1:
                 st.session_state[month_key] = 12
                 st.session_state[year_key] -= 1
@@ -53,11 +50,11 @@ def turkish_calendar(label, default_date=None, key="tcal"):
                 st.session_state[month_key] -= 1
             st.rerun()
     
-    with col2:
+    with c2:
         st.markdown(f"### {TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}")
     
-    with col3:
-        if st.button("Sonraki Ay ▶", key=f"{key}_next", use_container_width=True):
+    with c3:
+        if st.button("▶", key=f"{key}_next", use_container_width=True, help="Sonraki Ay"):
             if st.session_state[month_key] == 12:
                 st.session_state[month_key] = 1
                 st.session_state[year_key] += 1
@@ -65,127 +62,62 @@ def turkish_calendar(label, default_date=None, key="tcal"):
                 st.session_state[month_key] += 1
             st.rerun()
     
-    with col4:
-        if st.button("🏠 Bugün", key=f"{key}_today", use_container_width=True):
+    with c4:
+        if st.button("🏠", key=f"{key}_today", use_container_width=True, help="Bugün"):
             today = datetime.now().date()
             st.session_state[month_key] = today.month
             st.session_state[year_key] = today.year
             st.session_state[state_key] = today
             st.rerun()
     
-    # Takvim tablosu
+    # Gün isimleri başlığı
+    day_cols = st.columns(7)
+    for i, day_name in enumerate(TURKISH_DAYS):
+        with day_cols[i]:
+            st.markdown(f"<div style='text-align:center;font-weight:bold;color:#667eea;'>{day_name}</div>", unsafe_allow_html=True)
+    
+    # Takvim oluştur
     cal = calendar.monthcalendar(st.session_state[year_key], st.session_state[month_key])
-    
-    # CSS stili
-    st.markdown("""
-    <style>
-        .turkish-calendar {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
-            font-size: 16px;
-        }
-        .turkish-calendar th {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 12px;
-            text-align: center;
-            font-weight: 600;
-        }
-        .turkish-calendar td {
-            padding: 2px;
-            text-align: center;
-            height: 45px;
-        }
-        .turkish-calendar .day-btn {
-            width: 100%;
-            height: 40px;
-            border: 1px solid #dee2e6;
-            background: white;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-        .turkish-calendar .day-btn:hover {
-            background: #667eea;
-            color: white;
-            border-color: #667eea;
-        }
-        .turkish-calendar .day-btn.selected {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            border-color: #667eea;
-            font-weight: bold;
-            transform: scale(1.05);
-        }
-        .turkish-calendar .day-btn.weekend {
-            background: #f8f9fa;
-            color: #dc3545;
-        }
-        .turkish-calendar .day-btn.today {
-            border: 2px solid #28a745;
-        }
-        .turkish-calendar .day-btn.empty {
-            border: none;
-            background: transparent;
-            cursor: default;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Gün isimleri
-    header = "".join([f"<th>{gun}</th>" for gun in TURKISH_DAYS])
-    table_html = f'<table class="turkish-calendar"><thead><tr>{header}</tr></thead><tbody>'
-    
     today = datetime.now().date()
+    selected = st.session_state[state_key]
     
     for week in cal:
-        table_html += "<tr>"
-        for day in week:
-            if day == 0:
-                table_html += '<td><button class="day-btn empty" disabled></button></td>'
-            else:
-                date = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
-                classes = ["day-btn"]
-                
-                if date == st.session_state[state_key]:
-                    classes.append("selected")
-                if date.weekday() >= 5:  # Hafta sonu
-                    classes.append("weekend")
-                if date == today:
-                    classes.append("today")
-                
-                class_str = " ".join(classes)
-                # Her gün için benzersiz bir form key oluştur
-                form_key = f"{key}_day_{day}"
-                
-                table_html += f'<td><button class="{class_str}" onclick="document.getElementById(\'{form_key}\').click()">{day}</button></td>'
-        table_html += "</tr>"
-    
-    table_html += "</tbody></table>"
-    st.markdown(table_html, unsafe_allow_html=True)
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            with cols[i]:
+                if day == 0:
+                    st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+                else:
+                    date = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
+                    
+                    # Buton stilini belirle
+                    is_selected = (date == selected)
+                    is_today = (date == today)
+                    is_weekend = (date.weekday() >= 5)
+                    
+                    btn_type = "primary" if is_selected else "secondary"
+                    
+                    # Buton etiketi
+                    label_text = str(day)
+                    if is_today:
+                        label_text = f"⭐{day}"
+                    
+                    if st.button(
+                        label_text,
+                        key=f"{key}_d{day}",
+                        use_container_width=True,
+                        type=btn_type,
+                        help=f"{day} {TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}"
+                    ):
+                        st.session_state[state_key] = date
+                        st.rerun()
     
     # Seçilen tarihi göster
     selected = st.session_state[state_key]
-    st.markdown(f"✅ **Seçilen Tarih: {selected.strftime('%d %B %Y')} ({TURKISH_DAYS[selected.weekday()]})**")
+    gun_adi = TURKISH_DAYS[selected.weekday()]
+    st.markdown(f"✅ **Seçilen: {selected.strftime('%d %B %Y')} ({gun_adi})**")
     
-    # Gizli butonlarla gün seçimi
-    cols = st.columns(7)
-    day_count = 0
-    for week in cal:
-        for day in week:
-            if day != 0:
-                form_key = f"{key}_day_{day}"
-                with cols[day_count % 7]:
-                    if st.button(str(day), key=form_key, use_container_width=True, 
-                                help=f"{day} {TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}"):
-                        st.session_state[state_key] = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
-                        st.rerun()
-                day_count += 1
-    
-    return st.session_state[state_key]
+    return selected
 
 # ===================== GİRİŞ =====================
 def check_password():
@@ -225,12 +157,22 @@ def check_password():
     st.info("💡 **Demo:** Kullanıcı: `ADMIN` | Şifre: `Elma*`")
     return False
 
+# ===================== CSS =====================
+st.markdown("""<style>
+    .header { font-size:1.8rem; font-weight:700; text-align:center; padding:1rem;
+              background:linear-gradient(135deg,#667eea,#764ba2); color:white;
+              border-radius:15px; margin-bottom:1.5rem; }
+    .stButton>button { border-radius:8px; font-weight:600; transition:all 0.2s; }
+    .stButton>button:hover { transform:scale(1.05); }
+    div[data-testid="stVerticalBlock"] > div:has(div.stButton) { padding:2px; }
+</style>""", unsafe_allow_html=True)
+
 # ===================== SABİTLER =====================
 LOOKBACK, STEPS, WORKERS = 150, [5,10,15,30,60,90], 10
 STRATEGY = {'RSI_max':65, 'MA200_diff_min':-30, 'Stochastic_max':80, 'ADX_min':3, 'Volume_MA_ratio':0.3, 'Volume_trend_days':2, 'Price_volume_correlation':0.05, 'MFI_max':70}
 FILTERS = {'Min_Perf_Score':65, 'Max_RSI':60, 'Max_ADX':45, 'Min_Volume_MA':0.8, 'Max_MFI':65}
 
-# ===================== VERİ & GÖSTERGELER (ÖNCEKİYLE AYNI) =====================
+# ===================== VERİ & GÖSTERGELER =====================
 @st.cache_data(ttl=3600)
 def get_lists():
     try:
@@ -287,8 +229,7 @@ def calc_indicators(df):
     return df
 
 def score_stock(r):
-    s = 0
-    rs, ad, vl, mf = r['RSI'], r['ADX'], r['VolRatio'], r['MFI']
+    s, rs, ad, vl, mf = 0, r['RSI'], r['ADX'], r['VolRatio'], r['MFI']
     if 30<=rs<=40: s+=30
     elif 40<rs<=50: s+=25
     elif 50<rs<=55: s+=20
@@ -370,13 +311,7 @@ def main():
     if not check_password():
         return
     
-    st.markdown("""<style>
-        .header { font-size:2rem; font-weight:700; text-align:center; padding:1rem;
-                  background:linear-gradient(135deg,#667eea,#764ba2); color:white;
-                  border-radius:15px; margin-bottom:1.5rem; }
-        .stButton>button { width:100%; border-radius:8px; font-weight:600; }
-    </style>""", unsafe_allow_html=True)
-    
+    # Header
     c1, c2 = st.columns([8,1])
     with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA V3</div>', unsafe_allow_html=True)
     with c2:
@@ -384,6 +319,7 @@ def main():
             st.session_state.clear()
             st.rerun()
     
+    # Sidebar
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
         lists = get_lists()
@@ -413,6 +349,7 @@ def main():
         st.caption(f"⏱️ ~{days*len(symbols)*0.1/WORKERS:.0f}s | {days} iş günü")
         btn = st.button("🔍 TARAMA BAŞLAT", use_container_width=True, type="primary")
     
+    # Tarama
     if btn:
         t0 = time.time()
         with st.spinner('🔍 Taranıyor...'):
@@ -437,6 +374,7 @@ def main():
             st.warning("⚠️ Sinyal bulunamadı!")
             st.session_state.ok = False
     
+    # Sonuçlar
     if st.session_state.get('ok'):
         df = st.session_state.df
         st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s")
