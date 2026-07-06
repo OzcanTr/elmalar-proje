@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from io import BytesIO
+import calendar
 
 warnings.filterwarnings('ignore')
 
@@ -21,15 +22,105 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ===================== TÜRKÇE TARİH SEÇİCİ =====================
+TURKISH_MONTHS = [
+    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+    "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+]
+
+TURKISH_DAYS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
+
+def turkish_date_selector(label, default_date=None, key_prefix=""):
+    """
+    Türkçe tarih seçici widget'ı
+    Returns: datetime.date object
+    """
+    if default_date is None:
+        default_date = datetime.now()
+    
+    st.markdown(f"**{label}**")
+    
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    
+    with col1:
+        # Gün seçimi
+        gun = st.selectbox(
+            "Gün",
+            options=list(range(1, 32)),
+            index=default_date.day - 1 if default_date else 0,
+            key=f"{key_prefix}_gun"
+        )
+    
+    with col2:
+        # Ay seçimi (Türkçe)
+        ay_index = default_date.month - 1 if default_date else 0
+        ay = st.selectbox(
+            "Ay",
+            options=list(range(1, 13)),
+            format_func=lambda x: TURKISH_MONTHS[x-1],
+            index=ay_index,
+            key=f"{key_prefix}_ay"
+        )
+    
+    with col3:
+        # Yıl seçimi
+        yil = st.selectbox(
+            "Yıl",
+            options=list(range(2020, 2031)),
+            index=default_date.year - 2020 if default_date and 2020 <= default_date.year <= 2030 else 5,
+            key=f"{key_prefix}_yil"
+        )
+    
+    # Seçilen günün o ay için geçerli olup olmadığını kontrol et
+    try:
+        max_day = calendar.monthrange(yil, ay)[1]
+        if gun > max_day:
+            gun = max_day
+            st.warning(f"⚠️ {TURKISH_MONTHS[ay-1]} {yil} ayında {max_day} gün vardır. Gün {max_day} olarak ayarlandı.")
+        
+        secilen_tarih = datetime(yil, ay, gun).date()
+        
+        # Türkçe formatla göster
+        st.caption(f"📅 Seçilen: {gun} {TURKISH_MONTHS[ay-1]} {yil}")
+        
+        return secilen_tarih
+    except:
+        return default_date.date() if hasattr(default_date, 'date') else default_date
+
+def turkish_date_range_selector(baslangic_label, bitis_label, 
+                                  default_baslangic=None, default_bitis=None):
+    """
+    Türkçe tarih aralığı seçici
+    Returns: (baslangic_date, bitis_date)
+    """
+    if default_baslangic is None:
+        default_baslangic = datetime(2025, 7, 7)
+    if default_bitis is None:
+        default_bitis = datetime(2025, 7, 10)
+    
+    st.markdown(f"**{baslangic_label}**")
+    baslangic = turkish_date_selector("Başlangıç", default_baslangic, "baslangic")
+    
+    st.markdown(f"**{bitis_label}**")
+    bitis = turkish_date_selector("Bitiş", default_bitis, "bitis")
+    
+    # Başlangıç bitişten büyükse düzelt
+    if baslangic > bitis:
+        st.warning("⚠️ Başlangıç tarihi bitiş tarihinden büyük olamaz. Tarihler değiştirildi.")
+        baslangic, bitis = bitis, baslangic
+    
+    gun_farki = (bitis - baslangic).days
+    st.caption(f"📅 Aralık: {gun_farki + 1} gün")
+    
+    return baslangic, bitis
+
 # ===================== YETKİLENDİRME =====================
 def check_password():
     """Şifre kontrolü - Çoklu cihaz ve session desteği"""
     
-    # BU BİLGİLERİ DEĞİŞTİRİN!
     CORRECT_USERNAME = "ADMIN"
     CORRECT_PASSWORD = "Elma*"
     
-    # Session state'leri başlat
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     
@@ -39,7 +130,6 @@ def check_password():
     if "login_counter" not in st.session_state:
         st.session_state.login_counter = 0
     
-    # Zaten giriş yapılmışsa ana sayfaya geç
     if st.session_state.authenticated:
         return True
     
@@ -83,10 +173,8 @@ def check_password():
     st.markdown('<div class="login-title">BIST Sinyal Tarama</div>', unsafe_allow_html=True)
     st.markdown('<div class="login-subtitle">Version 3.0 | Yetkili Giriş</div>', unsafe_allow_html=True)
     
-    # Mesaj placeholder'ı
     message_placeholder = st.empty()
     
-    # Input'lar (her denemede yeni key ile)
     username = st.text_input(
         "👤 Kullanıcı Adı", 
         key=f"user_{st.session_state.login_counter}", 
@@ -110,21 +198,18 @@ def check_password():
     
     if login_button:
         if username == CORRECT_USERNAME and password == CORRECT_PASSWORD:
-            # Başarılı giriş
             st.session_state.login_error = False
             st.session_state.authenticated = True
             message_placeholder.success("✅ Giriş başarılı! Yönlendiriliyorsunuz...")
             time.sleep(0.5)
             st.rerun()
         else:
-            # Hatalı giriş
             st.session_state.login_error = True
             st.session_state.login_counter += 1
             message_placeholder.error("❌ Hatalı kullanıcı adı veya şifre! Lütfen tekrar deneyin.")
             time.sleep(0.3)
             st.rerun()
     
-    # Önceki denemede hata varsa göster (sayfa yenilendiğinde)
     if st.session_state.login_error and not login_button:
         message_placeholder.error("❌ Hatalı kullanıcı adı veya şifre! Lütfen tekrar deneyin.")
     
@@ -160,6 +245,12 @@ st.markdown("""
     .metric-value {
         font-size: 1.8rem;
         font-weight: bold;
+    }
+    .turkish-date {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 10px;
+        border: 1px solid #dee2e6;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -538,7 +629,6 @@ def main():
         st.markdown('<div class="main-header">📈 BIST SİNYAL TARAMA V3<br><small>Paralel İşlem | Gelişmiş Skor | Mobil Uyumlu</small></div>', unsafe_allow_html=True)
     with col2:
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
-            # Session state'i temizle
             for key in list(st.session_state.keys()):
                 if key != 'authenticated':
                     del st.session_state[key]
@@ -560,18 +650,34 @@ def main():
         tarih_tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
         if tarih_tip == "Tek Tarih":
-            ref_date = st.date_input("Tarih", datetime(2025, 7, 7))
+            ref_date = turkish_date_selector("Tarih Seçin", datetime(2025, 7, 7), "tek_tarih")
             start_date = end_date = ref_date
         elif tarih_tip == "Tarih Aralığı":
-            c1, c2 = st.columns(2)
-            with c1: start_date = st.date_input("Başlangıç", datetime(2025, 7, 7))
-            with c2: end_date = st.date_input("Bitiş", datetime(2025, 7, 10))
+            start_date, end_date = turkish_date_range_selector(
+                "Başlangıç Tarihi", "Bitiş Tarihi",
+                datetime(2025, 7, 7), datetime(2025, 7, 10)
+            )
         else:
+            st.markdown("**Ay Seçimi**")
             c1, c2 = st.columns(2)
-            with c1: year = st.number_input("Yıl", 2020, 2030, 2025)
-            with c2: month = st.number_input("Ay", 1, 12, 7)
-            start_date = pd.Timestamp(year=year, month=month, day=1)
-            end_date = pd.Timestamp(year=year, month=month+1, day=1)-timedelta(days=1) if month<12 else pd.Timestamp(year=year+1, month=1, day=1)-timedelta(days=1)
+            with c1:
+                yil = st.selectbox("Yıl", list(range(2020, 2031)), index=5, key="ay_yil")
+            with c2:
+                ay = st.selectbox(
+                    "Ay",
+                    list(range(1, 13)),
+                    format_func=lambda x: TURKISH_MONTHS[x-1],
+                    index=6,
+                    key="ay_ay"
+                )
+            
+            start_date = datetime(yil, ay, 1).date()
+            if ay == 12:
+                end_date = datetime(yil + 1, 1, 1).date() - timedelta(days=1)
+            else:
+                end_date = datetime(yil, ay + 1, 1).date() - timedelta(days=1)
+            
+            st.caption(f"📅 {TURKISH_MONTHS[ay-1]} {yil}: {start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}")
         
         gun = len(get_business_days_between(pd.to_datetime(start_date), pd.to_datetime(end_date)))
         st.caption(f"⏱️ ~{gun*len(hisseler)*0.1/MAX_WORKERS:.0f}s | {gun} işlem günü")
@@ -590,7 +696,7 @@ def main():
             status_text = st.empty()
             
             for i, day in enumerate(business_days):
-                status_text.text(f"📅 {day.strftime('%Y-%m-%d')} | ⚡ {time.time()-start_time:.0f}s | {i+1}/{len(business_days)}")
+                status_text.text(f"📅 {day.strftime('%d.%m.%Y')} | ⚡ {time.time()-start_time:.0f}s | {i+1}/{len(business_days)}")
                 results = run_single_date_v3_parallel(hisseler, day)
                 if results:
                     all_results[day.strftime('%Y-%m-%d')] = results
@@ -601,7 +707,6 @@ def main():
             status_text.empty()
         
         if all_signals:
-            # Sonuçları session_state'e kaydet
             st.session_state.all_signals = all_signals
             st.session_state.all_results = all_results
             st.session_state.df_all = pd.DataFrame(all_signals)
@@ -611,7 +716,7 @@ def main():
             st.warning("⚠️ Sinyal bulunamadı!")
             st.session_state.scan_completed = False
     
-    # Eğer tarama yapılmışsa sonuçları göster (sayfa yenilense bile)
+    # Sonuçları göster
     if st.session_state.get('scan_completed', False):
         df_all = st.session_state.df_all
         all_signals = st.session_state.all_signals
@@ -646,44 +751,23 @@ def main():
         st.markdown("---")
         st.markdown("### 📋 SİNYAL TABLOSU")
         
-        # Filtreleme - Form KULLANMADAN, doğrudan slider'larla
         st.markdown("**🔍 Filtreleme Seçenekleri**")
         
-        # Session state'te filtre değerlerini sakla
         if 'filter_values' not in st.session_state:
             st.session_state.filter_values = {'min_perf': 65, 'min_ret': -50, 'sort_by': 'Perf_Skor'}
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            min_perf = st.slider(
-                "Min Perf.Skor", 
-                0, 100, 
-                st.session_state.filter_values['min_perf'], 
-                key="min_perf_slider"
-            )
+            min_perf = st.slider("Min Perf.Skor", 0, 100, st.session_state.filter_values['min_perf'], key="min_perf_slider")
         with c2:
-            min_ret = st.slider(
-                "Min 30G (%)", 
-                -50, 200, 
-                st.session_state.filter_values['min_ret'], 
-                key="min_ret_slider"
-            )
+            min_ret = st.slider("Min 30G (%)", -50, 200, st.session_state.filter_values['min_ret'], key="min_ret_slider")
         with c3:
-            sort_by = st.selectbox(
-                "Sırala", 
-                ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"], 
-                index=["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"].index(st.session_state.filter_values['sort_by']),
-                key="sort_select"
-            )
+            sort_by = st.selectbox("Sırala", ["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"], 
+                                  index=["Perf_Skor", "+30_RET", "+60_RET", "RSI", "Hacim/MA"].index(st.session_state.filter_values['sort_by']),
+                                  key="sort_select")
         
-        # Slider değiştiğinde session state'i güncelle
-        st.session_state.filter_values = {
-            'min_perf': min_perf,
-            'min_ret': min_ret,
-            'sort_by': sort_by
-        }
+        st.session_state.filter_values = {'min_perf': min_perf, 'min_ret': min_ret, 'sort_by': sort_by}
         
-        # DataFrame'i filtrele
         df_f = df_all[
             (df_all['Perf_Skor'] >= st.session_state.filter_values['min_perf']) & 
             (df_all['+30_RET'].fillna(0) >= st.session_state.filter_values['min_ret'])
@@ -691,48 +775,31 @@ def main():
         
         st.markdown(f"**📊 Filtrelenmiş Sonuç: {len(df_f)} / {len(df_all)} sinyal**")
         
-        # Tabloyu göster
         st.dataframe(
             df_f[['Hisse','Tarih','Kapanis','Perf_Skor','RSI','ADX','Hacim/MA','MFI','+5_RET','+10_RET','+15_RET','+30_RET','+60_RET','+90_RET']],
-            use_container_width=True, 
-            height=400,
+            use_container_width=True, height=400,
             column_config={
                 '+30_RET': st.column_config.NumberColumn('30G', format='%.1f%%'),
                 '+60_RET': st.column_config.NumberColumn('60G', format='%.1f%%')
             }
         )
         
-        # İndirme seçenekleri
         st.markdown("---")
         st.markdown("### 📥 VERİ İNDİR")
         
         col_down1, col_down2 = st.columns(2)
         
         with col_down1:
-            # CSV indir
             csv = df_f.to_csv(index=False)
-            st.download_button(
-                "📊 CSV İndir",
-                csv,
-                f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.csv",
-                "text/csv",
-                key='download-csv'
-            )
+            st.download_button("📊 CSV İndir", csv, f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.csv", "text/csv", key='download-csv')
         
         with col_down2:
-            # Excel indir
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_f.to_excel(writer, index=False, sheet_name='Sinyaller')
-            
             excel_data = output.getvalue()
-            st.download_button(
-                "📑 EXCEL İndir",
-                excel_data,
-                f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key='download-excel'
-            )
+            st.download_button("📑 EXCEL İndir", excel_data, f"BIST_Sinyaller_{start_date.strftime('%Y%m%d')}.xlsx", 
+                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
         
         st.info("💡 **Excel dosyası** doğrudan tablo formatında açılır. CSV dosyasını Excel'de açmak için: Veri > Metin/CSV'den > Dosyayı seçin > Ayırıcı olarak 'Virgül' seçin.")
     
