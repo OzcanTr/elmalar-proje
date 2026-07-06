@@ -122,7 +122,7 @@ def get_lists():
         return {'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
 
 def get_data(symbol, date_str, debug_log):
-    """Veri çekme - DataFrame garantili"""
+    """Veri çekme - TAMAMEN DataFrame garantili"""
     try:
         ref = pd.to_datetime(date_str)
         sym = symbol.upper().strip()
@@ -132,125 +132,163 @@ def get_data(symbol, date_str, debug_log):
         end = (ref + timedelta(days=LOOKBACK)).strftime('%Y-%m-%d')
         
         ticker = bp.Ticker(sym)
-        df = ticker.history(start=start, end=end)
+        raw_data = ticker.history(start=start, end=end)
         
-        if df is None or len(df) == 0:
+        if raw_data is None or len(raw_data) == 0:
             return None
         
-        # DataFrame'e dönüştür (numpy array ise)
-        if not isinstance(df, pd.DataFrame):
-            df = pd.DataFrame(df)
+        # NE OLURSA OLSUN sıfırdan TEMİZ bir DataFrame oluştur
+        if isinstance(raw_data, pd.DataFrame):
+            # DataFrame ise kolonları al
+            data_dict = {}
+            for col in raw_data.columns:
+                data_dict[str(col).strip()] = raw_data[col].values
+        else:
+            # Numpy array veya liste ise
+            data_dict = {}
+            if isinstance(raw_data, np.ndarray):
+                arr = raw_data
+            else:
+                arr = np.array(raw_data)
+            
+            # İlk kolon tarih, sonrakiler OHLCV varsay
+            if arr.ndim == 2:
+                for i in range(arr.shape[1]):
+                    if i == 0:
+                        data_dict['Date'] = arr[:, i]
+                    elif i == 1:
+                        data_dict['Open'] = arr[:, i]
+                    elif i == 2:
+                        data_dict['High'] = arr[:, i]
+                    elif i == 3:
+                        data_dict['Low'] = arr[:, i]
+                    elif i == 4:
+                        data_dict['Close'] = arr[:, i]
+                    elif i == 5:
+                        data_dict['Volume'] = arr[:, i]
         
-        # Kolon isimlerini kontrol et ve düzelt
-        if df.index.name is not None or not isinstance(df.index, pd.RangeIndex):
-            df = df.reset_index()
+        # YEPYENİ bir DataFrame oluştur (eski referanslardan tamamen kopuk)
+        new_df = pd.DataFrame()
         
-        # Tarih kolonunu bul
+        # Tarih kolonunu bul ve ekle
         date_col = None
-        for col in df.columns:
-            if 'date' in str(col).lower() or 'index' in str(col).lower() or col == 0:
-                date_col = col
+        for key in data_dict.keys():
+            if 'date' in key.lower() or 'index' in key.lower() or 'tarih' in key.lower():
+                date_col = key
                 break
         
-        if date_col is not None:
-            df = df.rename(columns={date_col: 'Date'})
-        else:
-            # Eğer ilk kolon tarih gibi görünüyorsa
-            first_col = df.columns[0]
+        if date_col is None and len(data_dict) > 0:
+            # İlk kolonu tarih olarak al
+            date_col = list(data_dict.keys())[0]
+        
+        if date_col:
             try:
-                pd.to_datetime(df[first_col])
-                df = df.rename(columns={first_col: 'Date'})
+                new_df['Date'] = pd.to_datetime(data_dict[date_col])
+                if hasattr(new_df['Date'].iloc[0], 'tz') and new_df['Date'].iloc[0].tz is not None:
+                    new_df['Date'] = new_df['Date'].dt.tz_localize(None)
             except:
-                return None
+                new_df['Date'] = pd.to_datetime(data_dict[date_col], errors='coerce')
+            del data_dict[date_col]
         
-        # Tarihi datetime'a çevir
-        df['Date'] = pd.to_datetime(df['Date'])
-        if hasattr(df['Date'].iloc[0], 'tz') and df['Date'].iloc[0].tz is not None:
-            df['Date'] = df['Date'].dt.tz_localize(None)
+        # OHLCV kolonlarını ekle
+        remaining_keys = list(data_dict.keys())
         
-        # Diğer kolonları eşleştir
-        col_map = {}
-        for col in df.columns:
-            col_str = str(col).lower()
-            if 'open' in col_str: col_map[col] = 'Open'
-            elif 'high' in col_str: col_map[col] = 'High'
-            elif 'low' in col_str: col_map[col] = 'Low'
-            elif 'close' in col_str or 'kapanis' in col_str: col_map[col] = 'Close'
-            elif 'volume' in col_str or 'hacim' in col_str: col_map[col] = 'Volume'
-        
-        # Eğer otomatik eşleştirme çalışmazsa, pozisyona göre eşleştir
-        if 'Close' not in col_map.values():
-            numeric_cols = [col for col in df.columns if col != 'Date']
-            if len(numeric_cols) >= 4:
-                df = df.rename(columns={
-                    df.columns[0]: 'Date',
-                    numeric_cols[0]: 'Open',
-                    numeric_cols[1]: 'High', 
-                    numeric_cols[2]: 'Low',
-                    numeric_cols[3]: 'Close'
-                })
-                if len(numeric_cols) >= 5:
-                    df = df.rename(columns={numeric_cols[4]: 'Volume'})
+        if len(remaining_keys) >= 4:
+            # Otomatik eşleştirme dene
+            mapped = {}
+            for key in remaining_keys:
+                key_lower = key.lower()
+                if 'open' in key_lower and 'Open' not in mapped.values():
+                    mapped[key] = 'Open'
+                elif 'high' in key_lower and 'High' not in mapped.values():
+                    mapped[key] = 'High'
+                elif 'low' in key_lower and 'Low' not in mapped.values():
+                    mapped[key] = 'Low'
+                elif 'close' in key_lower and 'Close' not in mapped.values():
+                    mapped[key] = 'Close'
+                elif 'volume' in key_lower and 'Volume' not in mapped.values():
+                    mapped[key] = 'Volume'
+            
+            # Eşleştirme başarısızsa pozisyona göre ata
+            if 'Close' not in mapped.values():
+                ohlc_keys = remaining_keys[:4]
+                new_df['Open'] = pd.to_numeric(data_dict[ohlc_keys[0]], errors='coerce')
+                new_df['High'] = pd.to_numeric(data_dict[ohlc_keys[1]], errors='coerce')
+                new_df['Low'] = pd.to_numeric(data_dict[ohlc_keys[2]], errors='coerce')
+                new_df['Close'] = pd.to_numeric(data_dict[ohlc_keys[3]], errors='coerce')
+                if len(remaining_keys) >= 5:
+                    new_df['Volume'] = pd.to_numeric(data_dict[remaining_keys[4]], errors='coerce')
+                else:
+                    new_df['Volume'] = 0
+            else:
+                # Eşleşenleri ekle
+                for old_key, new_key in mapped.items():
+                    new_df[new_key] = pd.to_numeric(data_dict[old_key], errors='coerce')
+                
+                # Eksikleri tamamla
+                if 'Volume' not in new_df.columns:
+                    new_df['Volume'] = 0
         else:
-            df = df.rename(columns=col_map)
-        
-        # Gerekli kolonları kontrol et
-        required = ['Date', 'Open', 'High', 'Low', 'Close']
-        if not all(c in df.columns for c in required):
             return None
         
-        if 'Volume' not in df.columns:
-            df['Volume'] = 0
+        # TEMİZLİK: Tüm kolonları pandas Series yap
+        for col in new_df.columns:
+            new_df[col] = pd.Series(new_df[col].values, dtype='float64' if col != 'Date' else None)
         
-        # Sadece gerekli kolonları al ve sırala
-        result = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']].copy()
-        result = result.sort_values('Date').reset_index(drop=True)
+        # Sırala ve index'i sıfırla
+        new_df = new_df.sort_values('Date').reset_index(drop=True)
         
-        return result
+        return new_df
     except Exception as e:
         debug_log.append(f"❌ {sym} get_data hata: {str(e)}")
         return None
 
 def calc_indicators(df):
-    """İndikatörleri hesapla - DataFrame garantisi ile"""
-    # DataFrame olduğundan emin ol
-    if not isinstance(df, pd.DataFrame):
-        return df
+    """İndikatörleri hesapla - GARANTİLİ DataFrame"""
+    # YENİ bir DataFrame oluştur, tüm kolonları pandas Series yap
+    clean_df = pd.DataFrame()
     
-    # Kolonları float'a çevir (numpy array sorununu çözmek için)
+    if 'Date' in df.columns:
+        clean_df['Date'] = df['Date']
+    
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            # ZORLA pandas Series yap
+            clean_df[col] = pd.Series(df[col].values, dtype='float64')
+        else:
+            return df
     
+    # Şimdi clean_df üzerinde çalış (tamamen pandas)
     for p in [5,10,20,50,100,200]:
-        df[f'MA{p}'] = df['Close'].rolling(p).mean()
-        df[f'VMA{p}'] = df['Volume'].rolling(p).mean()
+        clean_df[f'MA{p}'] = clean_df['Close'].rolling(p).mean()
+        clean_df[f'VMA{p}'] = clean_df['Volume'].rolling(p).mean()
     
-    d = df['Close'].diff()
+    d = clean_df['Close'].diff()
     g = d.where(d>0,0).rolling(14).mean()
     l = (-d.where(d<0,0)).rolling(14).mean()
-    df['RSI'] = 100-(100/(1+g/l))
+    clean_df['RSI'] = 100-(100/(1+g/l))
     
-    df['Stochastic'] = 100*(df['Close']-df['Low'].rolling(14).min())/(df['High'].rolling(14).max()-df['Low'].rolling(14).min())
+    clean_df['Stochastic'] = 100*(clean_df['Close']-clean_df['Low'].rolling(14).min())/(clean_df['High'].rolling(14).max()-clean_df['Low'].rolling(14).min())
     
-    tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())))
-    atr = tr.rolling(14).mean()
-    dp = np.where((df['High']-df['High'].shift())>(df['Low'].shift()-df['Low']), np.maximum(df['High']-df['High'].shift(),0),0)
-    dm = np.where((df['Low'].shift()-df['Low'])>(df['High']-df['High'].shift()), np.maximum(df['Low'].shift()-df['Low'],0),0)
+    tr = np.maximum(clean_df['High']-clean_df['Low'], np.maximum(abs(clean_df['High']-clean_df['Close'].shift()), abs(clean_df['Low']-clean_df['Close'].shift())))
+    atr = pd.Series(tr).rolling(14).mean()
     
-    di_plus = 100*(dp.rolling(14).mean()/atr)
-    di_minus = 100*(dm.rolling(14).mean()/atr)
-    df['ADX'] = (100*(abs(di_plus-di_minus)/(di_plus+di_minus))).rolling(14).mean()
+    dp = np.where((clean_df['High']-clean_df['High'].shift())>(clean_df['Low'].shift()-clean_df['Low']), np.maximum(clean_df['High']-clean_df['High'].shift(),0),0)
+    dm = np.where((clean_df['Low'].shift()-clean_df['Low'])>(clean_df['High']-clean_df['High'].shift()), np.maximum(clean_df['Low'].shift()-clean_df['Low'],0),0)
     
-    df['VolRatio'] = df['Volume']/df['VMA20']
+    di_plus = 100*(pd.Series(dp).rolling(14).mean()/atr)
+    di_minus = 100*(pd.Series(dm).rolling(14).mean()/atr)
+    clean_df['ADX'] = (100*(abs(di_plus-di_minus)/(di_plus+di_minus))).rolling(14).mean()
     
-    tp = (df['High']+df['Low']+df['Close'])/3
-    mf = tp*df['Volume']
+    clean_df['VolRatio'] = clean_df['Volume']/clean_df['VMA20']
+    
+    tp = (clean_df['High']+clean_df['Low']+clean_df['Close'])/3
+    mf = tp*clean_df['Volume']
     pf = mf.where(tp>tp.shift(),0).rolling(14).sum()
     nf = mf.where(tp<tp.shift(),0).rolling(14).sum()
-    df['MFI'] = 100-(100/(1+pf/nf))
+    clean_df['MFI'] = 100-(100/(1+pf/nf))
     
-    return df
+    return clean_df
 
 def score_stock(r):
     s, rs, ad, vl, mf = 0, r['RSI'], r['ADX'], r['VolRatio'], r['MFI']
@@ -296,15 +334,9 @@ def check_signal(df, i):
         return False
 
 def scan_stock(sym, date_str, debug_log):
-    """Hisse tarama"""
     try:
         df = get_data(sym, date_str, debug_log)
         if df is None: 
-            return None
-        
-        # DataFrame tipini kontrol et
-        if not isinstance(df, pd.DataFrame):
-            debug_log.append(f"❌ {sym}: get_data DataFrame döndürmedi, tip: {type(df)}")
             return None
         
         df = calc_indicators(df)
@@ -312,7 +344,6 @@ def scan_stock(sym, date_str, debug_log):
         dates = df['Date'].dt.normalize()
         
         idx = next((i for i,d in enumerate(dates) if d>=ref), None)
-        
         if idx is None:
             return None
         
@@ -324,13 +355,10 @@ def scan_stock(sym, date_str, debug_log):
         if pd.isna(df['MA200'].iloc[idx]):
             return None
         
-        ma200_val = df['MA200'].iloc[idx]
-        close_val = df['Close'].iloc[idx]
-        
         if not check_signal(df, idx):
             return None
         
-        cur = close_val
+        cur = df['Close'].iloc[idx]
         r = {'Hisse':sym, 'Tarih':df.iloc[idx]['Date'].strftime('%Y-%m-%d'), 'Kapanis':round(cur,2),
              'RSI':round(rsi_val,1), 'ADX':round(adx_val,1),
              'VolRatio':round(vol_val,2), 'MFI':round(mfi_val,1)}
@@ -350,7 +378,6 @@ def scan_stock(sym, date_str, debug_log):
         return None
 
 def run_scan(symbols, date, debug_log):
-    """Tarama"""
     results = []
     if hasattr(date, 'strftime'):
         ds = date.strftime('%Y-%m-%d')
