@@ -103,6 +103,8 @@ st.markdown("""<style>
     .header { font-size:1.8rem; font-weight:700; text-align:center; padding:1rem;
               background:linear-gradient(135deg,#667eea,#764ba2); color:white;
               border-radius:15px; margin-bottom:1.5rem; }
+    .debug-box { background:#f0f0f0; padding:10px; border-radius:5px; font-family:monospace; 
+                 font-size:12px; max-height:600px; overflow-y:auto; }
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER =====================
@@ -122,7 +124,7 @@ def get_lists():
         return {'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
 
 def get_data(symbol, date_str):
-    """Veri çekme - GARANTİLİ DataFrame döndürür"""
+    """Veri çekme"""
     try:
         ref = pd.to_datetime(date_str)
         sym = symbol.upper().strip()
@@ -137,65 +139,38 @@ def get_data(symbol, date_str):
         if raw_data is None or len(raw_data) == 0:
             return None
         
-        # NE OLURSA OLSUN SIFIRDAN PANDAS DATAFRAME OLUŞTUR
-        # Borsapy'den gelen veriyi dict'e çevir, sonra DataFrame yap
+        # DataFrame'e çevir
+        if not isinstance(raw_data, pd.DataFrame):
+            raw_data = pd.DataFrame(raw_data)
         
-        if isinstance(raw_data, pd.DataFrame):
-            # DataFrame ise kolon isimlerini al
-            cols = raw_data.columns.tolist()
-            values = raw_data.values
-        elif isinstance(raw_data, np.ndarray):
-            # Numpy array ise
-            values = raw_data
-            cols = list(range(values.shape[1]))
-        else:
-            # Liste vs ise DataFrame'e çevir
-            raw_df = pd.DataFrame(raw_data)
-            cols = raw_df.columns.tolist()
-            values = raw_df.values
+        values = raw_data.values
         
-        # YENİ BİR DATAFRAME OLUŞTUR - ESKİ REFERANSLARDAN TAMAMEN BAĞIMSIZ
+        # Yeni DataFrame oluştur
         new_df = pd.DataFrame()
+        new_df['Date'] = pd.to_datetime(values[:, 0])
         
-        # İlk kolonu Tarih olarak al
-        try:
-            new_df['Date'] = pd.to_datetime(values[:, 0])
-        except:
-            new_df['Date'] = pd.to_datetime(values[:, 0], errors='coerce')
-        
-        # Zaman dilimi varsa kaldır
         if hasattr(new_df['Date'].iloc[0], 'tz') and new_df['Date'].iloc[0].tz is not None:
             new_df['Date'] = new_df['Date'].dt.tz_localize(None)
         
-        # Diğer kolonları OHLCV olarak al
         if values.shape[1] >= 5:
-            # En az 5 kolon varsa: Date, Open, High, Low, Close
             new_df['Open'] = values[:, 1].astype(float)
             new_df['High'] = values[:, 2].astype(float)
             new_df['Low'] = values[:, 3].astype(float)
             new_df['Close'] = values[:, 4].astype(float)
-            
-            if values.shape[1] >= 6:
-                new_df['Volume'] = values[:, 5].astype(float)
-            else:
-                new_df['Volume'] = 0.0
+            new_df['Volume'] = values[:, 5].astype(float) if values.shape[1] >= 6 else 0.0
         else:
             return None
         
-        # Sırala ve index'i sıfırla
-        new_df = new_df.sort_values('Date').reset_index(drop=True)
-        
-        return new_df
-    except Exception as e:
+        return new_df.sort_values('Date').reset_index(drop=True)
+    except:
         return None
 
 def calc_indicators(df):
-    """İndikatör hesaplama - GARANTİLİ DataFrame ile çalışır"""
-    # Eğer DataFrame değilse veya boşsa None döndür
+    """İndikatör hesaplama"""
     if df is None or len(df) == 0:
         return None
     
-    # TAMAMEN YENİ BİR DATAFRAME OLUŞTUR - Kopya değil, sıfırdan
+    # Yeni temiz DataFrame
     clean_df = pd.DataFrame()
     clean_df['Date'] = df['Date'].values
     clean_df['Open'] = df['Open'].values.astype(float)
@@ -204,7 +179,6 @@ def calc_indicators(df):
     clean_df['Close'] = df['Close'].values.astype(float)
     clean_df['Volume'] = df['Volume'].values.astype(float)
     
-    # Şimdi hesaplamaları yap
     for p in [5,10,20,50,100,200]:
         clean_df[f'MA{p}'] = clean_df['Close'].rolling(p).mean()
         clean_df[f'VMA{p}'] = clean_df['Volume'].rolling(p).mean()
@@ -278,47 +252,106 @@ def check_signal(df, i):
     except:
         return False
 
-def scan_stock(sym, date_str):
+def scan_stock_single(sym, date_str, debug_logs):
+    """Tek hisse tarama - debug log ile"""
     try:
         df = get_data(sym, date_str)
-        if df is None: return None
+        if df is None:
+            debug_logs.append(f"❌ {sym}: Veri çekilemedi")
+            return None
         
         df = calc_indicators(df)
-        if df is None: return None
+        if df is None:
+            debug_logs.append(f"❌ {sym}: İndikatör hesaplanamadı")
+            return None
         
         ref = pd.to_datetime(date_str).normalize()
         dates = df['Date'].dt.normalize()
         idx = next((i for i,d in enumerate(dates) if d>=ref), None)
-        if idx is None or not check_signal(df, idx): return None
         
-        cur = df['Close'].iloc[idx]
+        if idx is None:
+            debug_logs.append(f"❌ {sym}: Tarih bulunamadı (istenen: {ref.date()}, son veri: {dates.max().date()})")
+            return None
+        
+        rsi_val = df['RSI'].iloc[idx]
+        adx_val = df['ADX'].iloc[idx]
+        vol_val = df['VolRatio'].iloc[idx]
+        mfi_val = df['MFI'].iloc[idx]
+        stoch_val = df['Stochastic'].iloc[idx]
+        close_val = df['Close'].iloc[idx]
+        
+        if pd.isna(df['MA200'].iloc[idx]):
+            debug_logs.append(f"❌ {sym}: MA200 NaN")
+            return None
+        
+        ma200_val = df['MA200'].iloc[idx]
+        ma200_diff = ((close_val - ma200_val) / ma200_val) * 100
+        
+        # Sinyal kontrolü neden başarısız?
+        reasons = []
+        if pd.isna(rsi_val) or rsi_val > STRATEGY['RSI_max']:
+            reasons.append(f"RSI={rsi_val:.1f} (max:{STRATEGY['RSI_max']})")
+        if pd.isna(ma200_val):
+            reasons.append("MA200 NaN")
+        elif ma200_diff < STRATEGY['MA200_diff_min']:
+            reasons.append(f"MA200diff={ma200_diff:.1f}% (min:{STRATEGY['MA200_diff_min']})")
+        if pd.isna(stoch_val) or stoch_val > STRATEGY['Stochastic_max']:
+            reasons.append(f"Stoch={stoch_val:.1f} (max:{STRATEGY['Stochastic_max']})")
+        if pd.isna(adx_val) or adx_val < STRATEGY['ADX_min']:
+            reasons.append(f"ADX={adx_val:.1f} (min:{STRATEGY['ADX_min']})")
+        if pd.isna(vol_val) or vol_val < STRATEGY['Volume_MA_ratio']:
+            reasons.append(f"Vol={vol_val:.2f} (min:{STRATEGY['Volume_MA_ratio']})")
+        if pd.isna(mfi_val) or mfi_val > STRATEGY['MFI_max']:
+            reasons.append(f"MFI={mfi_val:.1f} (max:{STRATEGY['MFI_max']})")
+        
+        if reasons:
+            debug_logs.append(f"❌ {sym}: Sinyal yok - {' | '.join(reasons)}")
+            return None
+        
+        # Sinyal var!
+        cur = close_val
         r = {'Hisse':sym, 'Tarih':df.iloc[idx]['Date'].strftime('%Y-%m-%d'), 'Kapanis':round(cur,2),
-             'RSI':round(df['RSI'].iloc[idx],1), 'ADX':round(df['ADX'].iloc[idx],1),
-             'VolRatio':round(df['VolRatio'].iloc[idx],2), 'MFI':round(df['MFI'].iloc[idx],1)}
+             'RSI':round(rsi_val,1), 'ADX':round(adx_val,1),
+             'VolRatio':round(vol_val,2), 'MFI':round(mfi_val,1)}
         r['Perf_Skor'] = score_stock(r)
         
         for s in STEPS:
             if idx+s < len(df):
                 r[f'+{s}_RET'] = round(((df['Close'].iloc[idx+s]-cur)/cur)*100, 2)
         
-        if r['RSI']>FILTERS['Max_RSI'] or r['ADX']>FILTERS['Max_ADX']: return None
-        if r['VolRatio']<FILTERS['Min_Volume_MA'] or r['MFI']>FILTERS['Max_MFI']: return None
-        if r['Perf_Skor']<FILTERS['Min_Perf_Score']: return None
+        # Filtre kontrolü
+        filter_reasons = []
+        if r['RSI'] > FILTERS['Max_RSI']:
+            filter_reasons.append(f"RSI filtresi ({r['RSI']:.1f}>{FILTERS['Max_RSI']})")
+        if r['ADX'] > FILTERS['Max_ADX']:
+            filter_reasons.append(f"ADX filtresi ({r['ADX']:.1f}>{FILTERS['Max_ADX']})")
+        if r['VolRatio'] < FILTERS['Min_Volume_MA']:
+            filter_reasons.append(f"Vol filtresi ({r['VolRatio']:.2f}<{FILTERS['Min_Volume_MA']})")
+        if r['MFI'] > FILTERS['Max_MFI']:
+            filter_reasons.append(f"MFI filtresi ({r['MFI']:.1f}>{FILTERS['Max_MFI']})")
+        if r['Perf_Skor'] < FILTERS['Min_Perf_Score']:
+            filter_reasons.append(f"Skor filtresi ({r['Perf_Skor']}<{FILTERS['Min_Perf_Score']})")
+        
+        if filter_reasons:
+            debug_logs.append(f"⚠️ {sym}: Filtre elendi - {' | '.join(filter_reasons)}")
+            return None
+        
+        debug_logs.append(f"✅✅✅ {sym}: SİNYAL! Skor={r['Perf_Skor']} | RSI={rsi_val:.1f} ADX={adx_val:.1f} Vol={vol_val:.2f} MFI={mfi_val:.1f}")
         return r
-    except:
+    except Exception as e:
+        debug_logs.append(f"💥 {sym} HATA: {str(e)}")
         return None
 
-def run_scan(symbols, date):
+def run_scan_sequential(symbols, date, debug_logs):
+    """Sıralı tarama - debug için"""
     results = []
     ds = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
-    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futures = {ex.submit(scan_stock, s, ds):s for s in symbols}
-        for f in as_completed(futures):
-            try:
-                r = f.result()
-                if r: results.append(r)
-            except:
-                pass
+    
+    for sym in symbols:
+        r = scan_stock_single(sym, ds, debug_logs)
+        if r:
+            results.append(r)
+    
     return results
 
 def get_bdays(start, end):
@@ -335,22 +368,26 @@ def main():
         return
     
     if "debug_mode" not in st.session_state:
-        st.session_state.debug_mode = False
+        st.session_state.debug_mode = True  # Varsayılan olarak debug açık
+    if "debug_logs" not in st.session_state:
+        st.session_state.debug_logs = []
     
     c1, c2 = st.columns([8,1])
     with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA V3</div>', unsafe_allow_html=True)
     with c2:
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("🐛 Debug", use_container_width=True):
+            if st.button("🐛 Debug Aç/Kapat", use_container_width=True):
                 st.session_state.debug_mode = not st.session_state.debug_mode
+                if not st.session_state.debug_mode:
+                    st.session_state.debug_logs = []
         with col_btn2:
             if st.button("🚪 ÇIKIŞ", use_container_width=True):
                 st.session_state.clear()
                 st.rerun()
     
     if st.session_state.debug_mode:
-        st.warning("🐛 DEBUG MODU AKTİF")
+        st.warning("🐛 DEBUG MODU AKTİF - Tüm hisse detayları gösterilecek")
     
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
@@ -376,12 +413,14 @@ def main():
             end = (datetime(y,m+1,1) if m<12 else datetime(y+1,1,1)).date() - timedelta(days=1)
         
         days = len(get_bdays(pd.to_datetime(start), pd.to_datetime(end)))
-        st.caption(f"⏱️ ~{days*len(symbols)*0.1/WORKERS:.0f}s | {days} işlem günü")
+        st.caption(f"⏱️ ~{days*len(symbols)*0.2:.0f}s | {days} gün | {len(symbols)} hisse")
         btn = st.button("🔍 TARAMA BAŞLAT", use_container_width=True, type="primary")
     
     if btn:
         t0 = time.time()
-        with st.spinner('🔍 Taranıyor...'):
+        st.session_state.debug_logs = []
+        
+        with st.spinner('🔍 Taranıyor (debug mod)...'):
             bdays = get_bdays(pd.to_datetime(start), pd.to_datetime(end))
             all_signals = []
             bar = st.progress(0)
@@ -389,8 +428,17 @@ def main():
             
             for i, day in enumerate(bdays):
                 txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{len(bdays)}")
-                res = run_scan(symbols, day)
-                if res: all_signals.extend(res)
+                st.session_state.debug_logs.append(f"\n{'='*50}")
+                st.session_state.debug_logs.append(f"📅 GÜN {i+1}: {day.strftime('%d.%m.%Y')}")
+                st.session_state.debug_logs.append(f"{'='*50}")
+                
+                res = run_scan_sequential(symbols, day, st.session_state.debug_logs)
+                if res: 
+                    all_signals.extend(res)
+                    st.session_state.debug_logs.append(f"✅ Bu gün {len(res)} sinyal bulundu!")
+                else:
+                    st.session_state.debug_logs.append(f"❌ Bu gün sinyal bulunamadı")
+                
                 bar.progress((i+1)/len(bdays))
             
             bar.empty(); txt.empty()
@@ -402,6 +450,29 @@ def main():
         else:
             st.warning("⚠️ Sinyal bulunamadı!")
             st.session_state.ok = False
+        
+        # Debug log'ları göster
+        if st.session_state.debug_mode and st.session_state.debug_logs:
+            with st.expander("🐛 DETAYLI DEBUG LOGLARI", expanded=True):
+                # Özet
+                sinyal = sum(1 for log in st.session_state.debug_logs if "SİNYAL!" in log)
+                veri_yok = sum(1 for log in st.session_state.debug_logs if "Veri çekilemedi" in log)
+                sinyal_yok = sum(1 for log in st.session_state.debug_logs if "Sinyal yok" in log)
+                filtre = sum(1 for log in st.session_state.debug_logs if "Filtre elendi" in log)
+                hata = sum(1 for log in st.session_state.debug_logs if "HATA:" in log)
+                tarih_yok = sum(1 for log in st.session_state.debug_logs if "Tarih bulunamadı" in log)
+                
+                st.markdown(f"""
+                **📊 ÖZET:**
+                - ✅ Sinyal: **{sinyal}**
+                - ❌ Veri çekilemedi: {veri_yok}
+                - ❌ Sinyal koşulları sağlanmadı: {sinyal_yok}
+                - ⚠️ Filtre elendi: {filtre}
+                - 🔍 Tarih bulunamadı: {tarih_yok}
+                - 💥 Hata: {hata}
+                """)
+                
+                st.text_area("Detaylı Log", "\n".join(st.session_state.debug_logs), height=500)
     
     if st.session_state.get('ok'):
         df = st.session_state.df
@@ -426,6 +497,7 @@ def main():
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.info("💡 **Demo:** Kullanıcı: `ADMIN` | Şifre: `Elma*`")
+        st.info("📊 Debug modu varsayılan olarak açık. Her hisse için detaylı log gösterilir.")
 
 if __name__ == "__main__":
     main()
