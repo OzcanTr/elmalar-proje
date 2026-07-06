@@ -106,7 +106,7 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER =====================
-LOOKBACK, STEPS, WORKERS = 250, [5,10,15,30,60,90], 5
+LOOKBACK, STEPS, WORKERS = 150, [5,10,15,30,60,90], 10
 STRATEGY = {'RSI_max':65, 'MA200_diff_min':-30, 'Stochastic_max':80, 'ADX_min':3, 'Volume_MA_ratio':0.3, 'MFI_max':70}
 FILTERS = {'Min_Perf_Score':65, 'Max_RSI':60, 'Max_ADX':45, 'Min_Volume_MA':0.8, 'Max_MFI':65}
 
@@ -121,8 +121,9 @@ def get_lists():
     except:
         return {'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
 
-def get_data(symbol, date_str, debug_log):
-    """Veri çekme - TAMAMEN DataFrame garantili"""
+@st.cache_data(ttl=1800)
+def get_data(symbol, date_str):
+    """ORİJİNAL çalışan get_data fonksiyonu"""
     try:
         ref = pd.to_datetime(date_str)
         sym = symbol.upper().strip()
@@ -132,163 +133,68 @@ def get_data(symbol, date_str, debug_log):
         end = (ref + timedelta(days=LOOKBACK)).strftime('%Y-%m-%d')
         
         ticker = bp.Ticker(sym)
-        raw_data = ticker.history(start=start, end=end)
+        df = ticker.history(start=start, end=end)
         
-        if raw_data is None or len(raw_data) == 0:
+        if df is None or len(df) == 0:
             return None
         
-        # NE OLURSA OLSUN sıfırdan TEMİZ bir DataFrame oluştur
-        if isinstance(raw_data, pd.DataFrame):
-            # DataFrame ise kolonları al
-            data_dict = {}
-            for col in raw_data.columns:
-                data_dict[str(col).strip()] = raw_data[col].values
-        else:
-            # Numpy array veya liste ise
-            data_dict = {}
-            if isinstance(raw_data, np.ndarray):
-                arr = raw_data
-            else:
-                arr = np.array(raw_data)
-            
-            # İlk kolon tarih, sonrakiler OHLCV varsay
-            if arr.ndim == 2:
-                for i in range(arr.shape[1]):
-                    if i == 0:
-                        data_dict['Date'] = arr[:, i]
-                    elif i == 1:
-                        data_dict['Open'] = arr[:, i]
-                    elif i == 2:
-                        data_dict['High'] = arr[:, i]
-                    elif i == 3:
-                        data_dict['Low'] = arr[:, i]
-                    elif i == 4:
-                        data_dict['Close'] = arr[:, i]
-                    elif i == 5:
-                        data_dict['Volume'] = arr[:, i]
+        # Orijinal dönüşüm mantığı
+        df = df.reset_index()
+        date_col = next((c for c in df.columns if 'date' in c.lower() or 'index' in c.lower()), None)
+        df = df.rename(columns={date_col:'Date'} if date_col else {'index':'Date'})
+        df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
         
-        # YEPYENİ bir DataFrame oluştur (eski referanslardan tamamen kopuk)
-        new_df = pd.DataFrame()
+        col_map = {}
+        for c in df.columns:
+            cl = c.lower()
+            if 'open' in cl: col_map[c] = 'Open'
+            elif 'high' in cl: col_map[c] = 'High'
+            elif 'low' in cl: col_map[c] = 'Low'
+            elif 'close' in cl or 'kapanis' in cl: col_map[c] = 'Close'
+            elif 'volume' in cl or 'hacim' in cl: col_map[c] = 'Volume'
         
-        # Tarih kolonunu bul ve ekle
-        date_col = None
-        for key in data_dict.keys():
-            if 'date' in key.lower() or 'index' in key.lower() or 'tarih' in key.lower():
-                date_col = key
-                break
+        df = df.rename(columns=col_map)
         
-        if date_col is None and len(data_dict) > 0:
-            # İlk kolonu tarih olarak al
-            date_col = list(data_dict.keys())[0]
-        
-        if date_col:
-            try:
-                new_df['Date'] = pd.to_datetime(data_dict[date_col])
-                if hasattr(new_df['Date'].iloc[0], 'tz') and new_df['Date'].iloc[0].tz is not None:
-                    new_df['Date'] = new_df['Date'].dt.tz_localize(None)
-            except:
-                new_df['Date'] = pd.to_datetime(data_dict[date_col], errors='coerce')
-            del data_dict[date_col]
-        
-        # OHLCV kolonlarını ekle
-        remaining_keys = list(data_dict.keys())
-        
-        if len(remaining_keys) >= 4:
-            # Otomatik eşleştirme dene
-            mapped = {}
-            for key in remaining_keys:
-                key_lower = key.lower()
-                if 'open' in key_lower and 'Open' not in mapped.values():
-                    mapped[key] = 'Open'
-                elif 'high' in key_lower and 'High' not in mapped.values():
-                    mapped[key] = 'High'
-                elif 'low' in key_lower and 'Low' not in mapped.values():
-                    mapped[key] = 'Low'
-                elif 'close' in key_lower and 'Close' not in mapped.values():
-                    mapped[key] = 'Close'
-                elif 'volume' in key_lower and 'Volume' not in mapped.values():
-                    mapped[key] = 'Volume'
-            
-            # Eşleştirme başarısızsa pozisyona göre ata
-            if 'Close' not in mapped.values():
-                ohlc_keys = remaining_keys[:4]
-                new_df['Open'] = pd.to_numeric(data_dict[ohlc_keys[0]], errors='coerce')
-                new_df['High'] = pd.to_numeric(data_dict[ohlc_keys[1]], errors='coerce')
-                new_df['Low'] = pd.to_numeric(data_dict[ohlc_keys[2]], errors='coerce')
-                new_df['Close'] = pd.to_numeric(data_dict[ohlc_keys[3]], errors='coerce')
-                if len(remaining_keys) >= 5:
-                    new_df['Volume'] = pd.to_numeric(data_dict[remaining_keys[4]], errors='coerce')
-                else:
-                    new_df['Volume'] = 0
-            else:
-                # Eşleşenleri ekle
-                for old_key, new_key in mapped.items():
-                    new_df[new_key] = pd.to_numeric(data_dict[old_key], errors='coerce')
-                
-                # Eksikleri tamamla
-                if 'Volume' not in new_df.columns:
-                    new_df['Volume'] = 0
-        else:
+        if not all(c in df.columns for c in ['Date','Open','High','Low','Close']):
             return None
+        if 'Volume' not in df.columns:
+            df['Volume'] = 0
         
-        # TEMİZLİK: Tüm kolonları pandas Series yap
-        for col in new_df.columns:
-            new_df[col] = pd.Series(new_df[col].values, dtype='float64' if col != 'Date' else None)
-        
-        # Sırala ve index'i sıfırla
-        new_df = new_df.sort_values('Date').reset_index(drop=True)
-        
-        return new_df
-    except Exception as e:
-        debug_log.append(f"❌ {sym} get_data hata: {str(e)}")
+        return df[['Date','Open','High','Low','Close','Volume']].sort_values('Date').reset_index(drop=True)
+    except:
         return None
 
 def calc_indicators(df):
-    """İndikatörleri hesapla - GARANTİLİ DataFrame"""
-    # YENİ bir DataFrame oluştur, tüm kolonları pandas Series yap
-    clean_df = pd.DataFrame()
-    
-    if 'Date' in df.columns:
-        clean_df['Date'] = df['Date']
-    
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-        if col in df.columns:
-            # ZORLA pandas Series yap
-            clean_df[col] = pd.Series(df[col].values, dtype='float64')
-        else:
-            return df
-    
-    # Şimdi clean_df üzerinde çalış (tamamen pandas)
+    """ORİJİNAL çalışan calc_indicators fonksiyonu"""
     for p in [5,10,20,50,100,200]:
-        clean_df[f'MA{p}'] = clean_df['Close'].rolling(p).mean()
-        clean_df[f'VMA{p}'] = clean_df['Volume'].rolling(p).mean()
+        df[f'MA{p}'] = df['Close'].rolling(p).mean()
+        df[f'VMA{p}'] = df['Volume'].rolling(p).mean()
     
-    d = clean_df['Close'].diff()
+    d = df['Close'].diff()
     g = d.where(d>0,0).rolling(14).mean()
     l = (-d.where(d<0,0)).rolling(14).mean()
-    clean_df['RSI'] = 100-(100/(1+g/l))
+    df['RSI'] = 100-(100/(1+g/l))
     
-    clean_df['Stochastic'] = 100*(clean_df['Close']-clean_df['Low'].rolling(14).min())/(clean_df['High'].rolling(14).max()-clean_df['Low'].rolling(14).min())
+    df['Stochastic'] = 100*(df['Close']-df['Low'].rolling(14).min())/(df['High'].rolling(14).max()-df['Low'].rolling(14).min())
     
-    tr = np.maximum(clean_df['High']-clean_df['Low'], np.maximum(abs(clean_df['High']-clean_df['Close'].shift()), abs(clean_df['Low']-clean_df['Close'].shift())))
-    atr = pd.Series(tr).rolling(14).mean()
+    tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())))
+    atr = tr.rolling(14).mean()
+    dp = np.where((df['High']-df['High'].shift())>(df['Low'].shift()-df['Low']), np.maximum(df['High']-df['High'].shift(),0),0)
+    dm = np.where((df['Low'].shift()-df['Low'])>(df['High']-df['High'].shift()), np.maximum(df['Low'].shift()-df['Low'],0),0)
     
-    dp = np.where((clean_df['High']-clean_df['High'].shift())>(clean_df['Low'].shift()-clean_df['Low']), np.maximum(clean_df['High']-clean_df['High'].shift(),0),0)
-    dm = np.where((clean_df['Low'].shift()-clean_df['Low'])>(clean_df['High']-clean_df['High'].shift()), np.maximum(clean_df['Low'].shift()-clean_df['Low'],0),0)
+    di_plus = 100*(dp.rolling(14).mean()/atr)
+    di_minus = 100*(dm.rolling(14).mean()/atr)
+    df['ADX'] = (100*(abs(di_plus-di_minus)/(di_plus+di_minus))).rolling(14).mean()
     
-    di_plus = 100*(pd.Series(dp).rolling(14).mean()/atr)
-    di_minus = 100*(pd.Series(dm).rolling(14).mean()/atr)
-    clean_df['ADX'] = (100*(abs(di_plus-di_minus)/(di_plus+di_minus))).rolling(14).mean()
+    df['VolRatio'] = df['Volume']/df['VMA20']
     
-    clean_df['VolRatio'] = clean_df['Volume']/clean_df['VMA20']
-    
-    tp = (clean_df['High']+clean_df['Low']+clean_df['Close'])/3
-    mf = tp*clean_df['Volume']
+    tp = (df['High']+df['Low']+df['Close'])/3
+    mf = tp*df['Volume']
     pf = mf.where(tp>tp.shift(),0).rolling(14).sum()
     nf = mf.where(tp<tp.shift(),0).rolling(14).sum()
-    clean_df['MFI'] = 100-(100/(1+pf/nf))
+    df['MFI'] = 100-(100/(1+pf/nf))
     
-    return clean_df
+    return df
 
 def score_stock(r):
     s, rs, ad, vl, mf = 0, r['RSI'], r['ADX'], r['VolRatio'], r['MFI']
@@ -333,35 +239,21 @@ def check_signal(df, i):
     except:
         return False
 
-def scan_stock(sym, date_str, debug_log):
+def scan_stock(sym, date_str):
+    """ORİJİNAL çalışan scan_stock fonksiyonu"""
     try:
-        df = get_data(sym, date_str, debug_log)
-        if df is None: 
-            return None
-        
+        df = get_data(sym, date_str)
+        if df is None: return None
         df = calc_indicators(df)
         ref = pd.to_datetime(date_str).normalize()
         dates = df['Date'].dt.normalize()
-        
         idx = next((i for i,d in enumerate(dates) if d>=ref), None)
-        if idx is None:
-            return None
-        
-        rsi_val = df['RSI'].iloc[idx]
-        adx_val = df['ADX'].iloc[idx]
-        vol_val = df['VolRatio'].iloc[idx]
-        mfi_val = df['MFI'].iloc[idx]
-        
-        if pd.isna(df['MA200'].iloc[idx]):
-            return None
-        
-        if not check_signal(df, idx):
-            return None
+        if idx is None or not check_signal(df, idx): return None
         
         cur = df['Close'].iloc[idx]
         r = {'Hisse':sym, 'Tarih':df.iloc[idx]['Date'].strftime('%Y-%m-%d'), 'Kapanis':round(cur,2),
-             'RSI':round(rsi_val,1), 'ADX':round(adx_val,1),
-             'VolRatio':round(vol_val,2), 'MFI':round(mfi_val,1)}
+             'RSI':round(df['RSI'].iloc[idx],1), 'ADX':round(df['ADX'].iloc[idx],1),
+             'VolRatio':round(df['VolRatio'].iloc[idx],2), 'MFI':round(df['MFI'].iloc[idx],1)}
         r['Perf_Skor'] = score_stock(r)
         
         for s in STEPS:
@@ -371,29 +263,22 @@ def scan_stock(sym, date_str, debug_log):
         if r['RSI']>FILTERS['Max_RSI'] or r['ADX']>FILTERS['Max_ADX']: return None
         if r['VolRatio']<FILTERS['Min_Volume_MA'] or r['MFI']>FILTERS['Max_MFI']: return None
         if r['Perf_Skor']<FILTERS['Min_Perf_Score']: return None
-        
         return r
-    except Exception as e:
-        debug_log.append(f"❌ {sym} scan_stock hata: {str(e)}")
+    except:
         return None
 
-def run_scan(symbols, date, debug_log):
+def run_scan(symbols, date):
+    """ORİJİNAL çalışan run_scan fonksiyonu"""
     results = []
-    if hasattr(date, 'strftime'):
-        ds = date.strftime('%Y-%m-%d')
-    else:
-        ds = str(date)
-    
+    ds = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futures = {ex.submit(scan_stock, s, ds, debug_log):s for s in symbols}
+        futures = {ex.submit(scan_stock, s, ds):s for s in symbols}
         for f in as_completed(futures):
             try:
                 r = f.result()
-                if r: 
-                    results.append(r)
-            except Exception as e:
-                debug_log.append(f"❌ Future hata: {str(e)}")
-    
+                if r: results.append(r)
+            except:
+                pass
     return results
 
 def get_bdays(start, end):
@@ -409,10 +294,9 @@ def main():
     if not check_password():
         return
     
+    # Debug modu
     if "debug_mode" not in st.session_state:
         st.session_state.debug_mode = False
-    if "debug_logs" not in st.session_state:
-        st.session_state.debug_logs = []
     
     c1, c2 = st.columns([8,1])
     with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA V3</div>', unsafe_allow_html=True)
@@ -421,8 +305,6 @@ def main():
         with col_btn1:
             if st.button("🐛 Debug", use_container_width=True):
                 st.session_state.debug_mode = not st.session_state.debug_mode
-                if not st.session_state.debug_mode:
-                    st.session_state.debug_logs = []
         with col_btn2:
             if st.button("🚪 ÇIKIŞ", use_container_width=True):
                 st.session_state.clear()
@@ -442,31 +324,30 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih","Aralık","Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2025,7,22), "tek")
+            d = turkish_date_picker("Tarih Seçin", datetime(2025,7,7), "tek")
             start = end = d
+            
+            # DEBUG: Seçilen tarihi ve formatını göster
+            if st.session_state.debug_mode:
+                st.write(f"🔍 Seçilen tarih: {d} (tip: {type(d)})")
+                st.write(f"🔍 strftime: {d.strftime('%Y-%m-%d')}")
+                
         elif tip == "Aralık":
             start = turkish_date_picker("Başlangıç", datetime(2025,7,7), "bas")
             end = turkish_date_picker("Bitiş", datetime(2025,7,10), "bit")
         else:
             c1,c2 = st.columns(2)
-            with c1: 
-                y = st.selectbox("Yıl", range(2020,2031), index=5, key="yy")
-            with c2: 
-                m = st.selectbox("Ay", range(1,13), 
-                                format_func=lambda x: TURKISH_MONTHS[x-1], 
-                                index=6, key="mm")
+            with c1: y = st.selectbox("Yıl", range(2020,2031), index=5, key="yy")
+            with c2: m = st.selectbox("Ay", range(1,13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6, key="mm")
             start = datetime(y,m,1).date()
             end = (datetime(y,m+1,1) if m<12 else datetime(y+1,1,1)).date() - timedelta(days=1)
-            st.info(f"📅 **{TURKISH_MONTHS[m-1]} {y}** taranacak\n({start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')})")
         
         days = len(get_bdays(pd.to_datetime(start), pd.to_datetime(end)))
-        st.caption(f"⏱️ ~{days*len(symbols)*0.2/WORKERS:.0f}s | {days} işlem günü")
+        st.caption(f"⏱️ ~{days*len(symbols)*0.1/WORKERS:.0f}s | {days} işlem günü")
         btn = st.button("🔍 TARAMA BAŞLAT", use_container_width=True, type="primary")
     
     if btn:
         t0 = time.time()
-        st.session_state.debug_logs = []
-        
         with st.spinner('🔍 Taranıyor...'):
             bdays = get_bdays(pd.to_datetime(start), pd.to_datetime(end))
             all_signals = []
@@ -475,9 +356,12 @@ def main():
             
             for i, day in enumerate(bdays):
                 txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{len(bdays)}")
-                res = run_scan(symbols, day, st.session_state.debug_logs)
-                if res: 
-                    all_signals.extend(res)
+                
+                if st.session_state.debug_mode:
+                    st.write(f"🔍 Taranan gün: {day} (tip: {type(day)})")
+                
+                res = run_scan(symbols, day)
+                if res: all_signals.extend(res)
                 bar.progress((i+1)/len(bdays))
             
             bar.empty(); txt.empty()
@@ -489,12 +373,6 @@ def main():
         else:
             st.warning("⚠️ Sinyal bulunamadı!")
             st.session_state.ok = False
-        
-        if st.session_state.debug_mode and st.session_state.debug_logs:
-            with st.expander("🐛 DEBUG LOGLARI", expanded=True):
-                hata_sayisi = sum(1 for log in st.session_state.debug_logs if "hata" in log.lower())
-                st.metric("Toplam Hata", hata_sayisi)
-                st.text_area("Detaylı Log", "\n".join(st.session_state.debug_logs), height=400)
     
     if st.session_state.get('ok'):
         df = st.session_state.df
