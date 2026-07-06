@@ -14,12 +14,12 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="BIST Sinyal Tarama V3", page_icon="📈", layout="wide")
 
-# ===================== TÜRKÇE TAKVİM (IZGARA + MANUEL) =====================
+# ===================== TÜRKÇE TAKVİM =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
 TURKISH_DAYS = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"]
 
 def turkish_calendar(label, default_date=None, key="tcal"):
-    """Türkçe takvim - Manuel giriş + Tıklanabilir ızgara"""
+    """Türkçe takvim - gg.aa.yyyy giriş + görsel takvim"""
     
     if default_date is None:
         default_date = datetime.now().date()
@@ -37,199 +37,150 @@ def turkish_calendar(label, default_date=None, key="tcal"):
     
     st.markdown(f"**{label}**")
     
-    # ---- MANUEL GİRİŞ ----
-    manuel_col, takvim_col = st.columns([1, 3])
+    # ---- MANUEL GİRİŞ (gg.aa.yyyy) ----
+    c1, c2 = st.columns([3, 1])
     
-    with manuel_col:
-        st.markdown("<div style='margin-top:10px;'><b>📝 Manuel Giriş</b></div>", unsafe_allow_html=True)
-        
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            gun_input = st.number_input("Gün", 1, 31, st.session_state[state_key].day, key=f"{key}_gun")
-        with m2:
-            ay_input = st.selectbox("Ay", range(1,13), 
-                                    format_func=lambda x: TURKISH_MONTHS[x-1],
-                                    index=st.session_state[state_key].month-1,
-                                    key=f"{key}_ay_manuel")
-        with m3:
-            yil_input = st.number_input("Yıl", 2020, 2030, st.session_state[state_key].year, key=f"{key}_yil")
-        
-        if st.button("✅ Tarihe Git", key=f"{key}_git", use_container_width=True):
+    with c1:
+        tarih_str = st.text_input(
+            "📝 Tarih (gg.aa.yyyy)",
+            value=st.session_state[state_key].strftime('%d.%m.%Y'),
+            key=f"{key}_manuel",
+            placeholder="Örn: 15.07.2025"
+        )
+    
+    with c2:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if st.button("✅ Git", key=f"{key}_git", use_container_width=True):
             try:
-                max_day = calendar.monthrange(yil_input, ay_input)[1]
-                gun = min(gun_input, max_day)
-                st.session_state[state_key] = datetime(yil_input, ay_input, gun).date()
-                st.session_state[month_key] = ay_input
-                st.session_state[year_key] = yil_input
-                st.rerun()
+                # gg.aa.yyyy veya gg/aa/yyyy formatını parse et
+                tarih_str = tarih_str.replace('/', '.').strip()
+                parts = tarih_str.split('.')
+                if len(parts) == 3:
+                    gun, ay, yil = int(parts[0]), int(parts[1]), int(parts[2])
+                    max_day = calendar.monthrange(yil, ay)[1]
+                    gun = min(gun, max_day)
+                    st.session_state[state_key] = datetime(yil, ay, gun).date()
+                    st.session_state[month_key] = ay
+                    st.session_state[year_key] = yil
+                    st.rerun()
+                else:
+                    st.error("Format: gg.aa.yyyy (örn: 15.07.2025)")
             except:
-                st.error("Geçersiz tarih!")
+                st.error("Geçersiz tarih! Format: gg.aa.yyyy")
     
-    with takvim_col:
-        # Navigasyon
-        nav1, nav2, nav3, nav4 = st.columns([1, 3, 1, 1])
-        with nav1:
-            if st.button("◀", key=f"{key}_prev", use_container_width=True):
-                if st.session_state[month_key] == 1:
-                    st.session_state[month_key] = 12
-                    st.session_state[year_key] -= 1
-                else:
-                    st.session_state[month_key] -= 1
-                st.rerun()
-        
-        with nav2:
-            st.markdown(f"<h3 style='text-align:center;margin:0;color:#667eea;'>{TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}</h3>", unsafe_allow_html=True)
-        
-        with nav3:
-            if st.button("▶", key=f"{key}_next", use_container_width=True):
-                if st.session_state[month_key] == 12:
-                    st.session_state[month_key] = 1
-                    st.session_state[year_key] += 1
-                else:
-                    st.session_state[month_key] += 1
-                st.rerun()
-        
-        with nav4:
-            if st.button("🏠 Bugün", key=f"{key}_today", use_container_width=True):
-                today = datetime.now().date()
-                st.session_state[state_key] = today
-                st.session_state[month_key] = today.month
-                st.session_state[year_key] = today.year
-                st.rerun()
-        
-        # Takvim ızgarası
-        cal = calendar.monthcalendar(st.session_state[year_key], st.session_state[month_key])
+    # ---- TAKVİM GÖRSELİ ----
+    st.markdown("---")
+    
+    # Navigasyon
+    nav1, nav2, nav3 = st.columns([1, 4, 1])
+    with nav1:
+        if st.button("◀ Önceki Ay", key=f"{key}_prev", use_container_width=True):
+            if st.session_state[month_key] == 1:
+                st.session_state[month_key] = 12
+                st.session_state[year_key] -= 1
+            else:
+                st.session_state[month_key] -= 1
+            st.rerun()
+    with nav2:
+        st.markdown(f"<h3 style='text-align:center;margin:0;'>{TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}</h3>", unsafe_allow_html=True)
+    with nav3:
+        if st.button("Sonraki Ay ▶", key=f"{key}_next", use_container_width=True):
+            if st.session_state[month_key] == 12:
+                st.session_state[month_key] = 1
+                st.session_state[year_key] += 1
+            else:
+                st.session_state[month_key] += 1
+            st.rerun()
+    
+    # Bugün butonu
+    if st.button("🏠 Bugüne Git", key=f"{key}_today", use_container_width=True):
         today = datetime.now().date()
-        selected = st.session_state[state_key]
-        
-        # CSS
-        st.markdown("""
-        <style>
-            .calendar-grid {
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 14px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-                border-radius: 10px;
-                overflow: hidden;
-            }
-            .calendar-grid th {
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                color: white;
-                padding: 10px 8px;
-                text-align: center;
-                font-weight: 600;
-                font-size: 13px;
-            }
-            .calendar-grid td {
-                text-align: center;
-                padding: 0;
-                border: 1px solid #e9ecef;
-                transition: all 0.2s;
-            }
-            .calendar-grid td:hover {
-                background: #f0f2ff !important;
-            }
-            .calendar-grid .day-cell {
-                display: block;
-                width: 100%;
-                padding: 10px 5px;
-                text-decoration: none;
-                color: #333;
-                font-weight: 500;
-                cursor: pointer;
-                transition: all 0.2s;
-                border: none;
-                background: transparent;
-                font-size: 14px;
-            }
-            .calendar-grid .day-cell:hover {
-                background: #667eea;
-                color: white;
-                border-radius: 5px;
-            }
-            .calendar-grid .day-cell.selected {
-                background: #667eea !important;
-                color: white !important;
-                font-weight: bold;
-                border-radius: 5px;
-                box-shadow: 0 2px 8px rgba(102,126,234,0.4);
-            }
-            .calendar-grid .day-cell.today {
-                border: 2px solid #28a745 !important;
-                font-weight: bold;
-            }
-            .calendar-grid .day-cell.weekend {
-                color: #dc3545;
-            }
-            .calendar-grid .day-cell.empty {
-                cursor: default;
-                background: #f8f9fa;
-            }
-            .calendar-grid .day-cell.empty:hover {
-                background: #f8f9fa;
-                color: #333;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        # Tablo oluştur
-        table = '<table class="calendar-grid"><thead><tr>'
-        for day_name in TURKISH_DAYS:
-            table += f'<th>{day_name}</th>'
-        table += '</tr></thead><tbody>'
-        
-        for week in cal:
-            table += '<tr>'
-            for day in week:
-                if day == 0:
-                    table += '<td><span class="day-cell empty">&nbsp;</span></td>'
-                else:
-                    date = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
-                    classes = ['day-cell']
-                    
-                    if date == selected:
-                        classes.append('selected')
-                    if date == today:
-                        classes.append('today')
-                    if date.weekday() >= 5:
-                        classes.append('weekend')
-                    
-                    class_str = ' '.join(classes)
-                    cell_id = f"{key}_cell_{day}"
-                    
-                    # Tıklanabilir hücre - form submit ile çalışır
-                    table += f'''
-                    <td>
-                        <form method="get" style="margin:0;padding:0;">
-                            <button type="submit" class="{class_str}" 
-                                    name="{cell_id}" value="{day}"
-                                    style="width:100%;border:none;background:transparent;cursor:pointer;">
-                                {day}
-                            </button>
-                        </form>
-                    </td>'''
-            table += '</tr>'
-        
-        table += '</tbody></table>'
-        st.markdown(table, unsafe_allow_html=True)
-        
-        # Gizli butonlarla tıklama yakalama
-        for week in cal:
-            cols = st.columns(7)
-            for i, day in enumerate(week):
-                if day != 0:
-                    with cols[i]:
-                        if st.button(str(day), key=f"{key}_cell_{day}", 
-                                    help=f"{day} {TURKISH_MONTHS[st.session_state[month_key]-1]}",
-                                    use_container_width=True):
-                            st.session_state[state_key] = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
-                            st.rerun()
+        st.session_state[state_key] = today
+        st.session_state[month_key] = today.month
+        st.session_state[year_key] = today.year
+        st.rerun()
     
-    # Seçili tarih gösterimi
+    # Takvim tablosu
+    cal = calendar.monthcalendar(st.session_state[year_key], st.session_state[month_key])
+    today = datetime.now().date()
+    selected = st.session_state[state_key]
+    
+    # CSS
+    st.markdown("""
+    <style>
+        .cal-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        .cal-table th {
+            background: #667eea;
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 13px;
+        }
+        .cal-table td {
+            text-align: center;
+            padding: 10px 5px;
+            border: 1px solid #e9ecef;
+            font-weight: 500;
+        }
+        .cal-table td.selected {
+            background: #667eea !important;
+            color: white !important;
+            font-weight: bold;
+        }
+        .cal-table td.today {
+            border: 2px solid #28a745 !important;
+        }
+        .cal-table td.weekend {
+            color: #dc3545;
+        }
+        .cal-table td.empty {
+            background: #f8f9fa;
+            border: 1px solid #f0f0f0;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Tabloyu oluştur
+    table = '<table class="cal-table"><thead><tr>'
+    for day_name in TURKISH_DAYS:
+        table += f'<th>{day_name}</th>'
+    table += '</tr></thead><tbody>'
+    
+    for week in cal:
+        table += '<tr>'
+        for day in week:
+            if day == 0:
+                table += '<td class="empty"></td>'
+            else:
+                date = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
+                classes = []
+                
+                if date == selected:
+                    classes.append('selected')
+                if date == today:
+                    classes.append('today')
+                if date.weekday() >= 5:
+                    classes.append('weekend')
+                
+                class_str = ' '.join(classes)
+                table += f'<td class="{class_str}">{day}</td>'
+        table += '</tr>'
+    
+    table += '</tbody></table>'
+    st.markdown(table, unsafe_allow_html=True)
+    
+    # Seçili tarih
     selected = st.session_state[state_key]
     gun_adi = TURKISH_DAYS[selected.weekday()]
-    st.success(f"✅ **Seçilen Tarih: {selected.strftime('%d %B %Y')} ({gun_adi})**")
+    st.success(f"✅ **Seçilen: {selected.strftime('%d %B %Y')} ({gun_adi})**")
     
     return selected
 
@@ -484,8 +435,8 @@ def main():
             d = turkish_calendar("Tarih Seçin", datetime(2025,7,7), "tek")
             start = end = d
         elif tip == "Aralık":
-            start = turkish_calendar("Başlangıç Tarihi", datetime(2025,7,7), "bas")
-            end = turkish_calendar("Bitiş Tarihi", datetime(2025,7,10), "bit")
+            start = turkish_calendar("Başlangıç", datetime(2025,7,7), "bas")
+            end = turkish_calendar("Bitiş", datetime(2025,7,10), "bit")
         else:
             c1,c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020,2031), index=5, key="yy")
@@ -506,7 +457,7 @@ def main():
             txt = st.empty()
             
             for i, day in enumerate(bdays):
-                txt.text(f"📅 {day.strftime('%d.%m.%Y')} | ⚡ {time.time()-t0:.0f}s | {i+1}/{len(bdays)}")
+                txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{len(bdays)}")
                 res = run_scan(symbols, day)
                 if res: all_signals.extend(res)
                 bar.progress((i+1)/len(bdays))
