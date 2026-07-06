@@ -16,35 +16,176 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="BIST Sinyal Tarama V3", page_icon="📈", layout="wide")
 
-# ===================== TÜRKÇE TARİH SEÇİCİ =====================
+# ===================== TÜRKÇE TAKVİM BİLEŞENİ =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
+TURKISH_DAYS = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"]
 
-def hybrid_date_selector(label, default_date=None, key_prefix=""):
+def turkish_calendar(label, default_date=None, key="tcal"):
+    """
+    Tam Türkçe takvim bileşeni - Tüm ay görünümünde, tıklanabilir günler
+    """
     if default_date is None:
-        default_date = datetime.now()
+        default_date = datetime.now().date()
+    elif hasattr(default_date, 'date'):
+        default_date = default_date.date()
+    
+    # Session state'de seçili tarihi sakla
+    state_key = f"{key}_selected"
+    month_key = f"{key}_month"
+    year_key = f"{key}_year"
+    
+    if state_key not in st.session_state:
+        st.session_state[state_key] = default_date
+        st.session_state[month_key] = default_date.month
+        st.session_state[year_key] = default_date.year
     
     st.markdown(f"**{label}**")
     
-    manuel_str = st.text_input("📝 gg.aa.yyyy", value=default_date.strftime('%d.%m.%Y'), key=f"{key_prefix}_manuel", placeholder="15.07.2025")
+    # Ay ve Yıl navigasyonu
+    col1, col2, col3, col4 = st.columns([1, 1.5, 1, 1])
     
-    try:
-        parts = manuel_str.replace('/', '.').split('.')
-        manuel_date = datetime(int(parts[2]), int(parts[1]), int(parts[0])).date()
-    except:
-        manuel_date = None
+    with col1:
+        if st.button("◀ Önceki Ay", key=f"{key}_prev", use_container_width=True):
+            if st.session_state[month_key] == 1:
+                st.session_state[month_key] = 12
+                st.session_state[year_key] -= 1
+            else:
+                st.session_state[month_key] -= 1
+            st.rerun()
     
-    with st.expander("📅 Takvim", expanded=(manuel_date is None)):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            gun = st.selectbox("Gün", range(1,32), index=default_date.day-1, key=f"{key_prefix}_g")
-        with c2:
-            ay = st.selectbox("Ay", range(1,13), format_func=lambda x: TURKISH_MONTHS[x-1], index=default_date.month-1, key=f"{key_prefix}_a")
-        with c3:
-            yil = st.selectbox("Yıl", range(2020,2031), index=default_date.year-2020, key=f"{key_prefix}_y")
+    with col2:
+        st.markdown(f"### {TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}")
     
-    secilen = manuel_date if manuel_date else datetime(yil, ay, min(gun, calendar.monthrange(yil, ay)[1])).date()
-    st.caption(f"✅ **{secilen.strftime('%d %B %Y')}**")
-    return secilen
+    with col3:
+        if st.button("Sonraki Ay ▶", key=f"{key}_next", use_container_width=True):
+            if st.session_state[month_key] == 12:
+                st.session_state[month_key] = 1
+                st.session_state[year_key] += 1
+            else:
+                st.session_state[month_key] += 1
+            st.rerun()
+    
+    with col4:
+        if st.button("🏠 Bugün", key=f"{key}_today", use_container_width=True):
+            today = datetime.now().date()
+            st.session_state[month_key] = today.month
+            st.session_state[year_key] = today.year
+            st.session_state[state_key] = today
+            st.rerun()
+    
+    # Takvim tablosu
+    cal = calendar.monthcalendar(st.session_state[year_key], st.session_state[month_key])
+    
+    # CSS stili
+    st.markdown("""
+    <style>
+        .turkish-calendar {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        .turkish-calendar th {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px;
+            text-align: center;
+            font-weight: 600;
+        }
+        .turkish-calendar td {
+            padding: 2px;
+            text-align: center;
+            height: 45px;
+        }
+        .turkish-calendar .day-btn {
+            width: 100%;
+            height: 40px;
+            border: 1px solid #dee2e6;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .turkish-calendar .day-btn:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .turkish-calendar .day-btn.selected {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-color: #667eea;
+            font-weight: bold;
+            transform: scale(1.05);
+        }
+        .turkish-calendar .day-btn.weekend {
+            background: #f8f9fa;
+            color: #dc3545;
+        }
+        .turkish-calendar .day-btn.today {
+            border: 2px solid #28a745;
+        }
+        .turkish-calendar .day-btn.empty {
+            border: none;
+            background: transparent;
+            cursor: default;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Gün isimleri
+    header = "".join([f"<th>{gun}</th>" for gun in TURKISH_DAYS])
+    table_html = f'<table class="turkish-calendar"><thead><tr>{header}</tr></thead><tbody>'
+    
+    today = datetime.now().date()
+    
+    for week in cal:
+        table_html += "<tr>"
+        for day in week:
+            if day == 0:
+                table_html += '<td><button class="day-btn empty" disabled></button></td>'
+            else:
+                date = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
+                classes = ["day-btn"]
+                
+                if date == st.session_state[state_key]:
+                    classes.append("selected")
+                if date.weekday() >= 5:  # Hafta sonu
+                    classes.append("weekend")
+                if date == today:
+                    classes.append("today")
+                
+                class_str = " ".join(classes)
+                # Her gün için benzersiz bir form key oluştur
+                form_key = f"{key}_day_{day}"
+                
+                table_html += f'<td><button class="{class_str}" onclick="document.getElementById(\'{form_key}\').click()">{day}</button></td>'
+        table_html += "</tr>"
+    
+    table_html += "</tbody></table>"
+    st.markdown(table_html, unsafe_allow_html=True)
+    
+    # Seçilen tarihi göster
+    selected = st.session_state[state_key]
+    st.markdown(f"✅ **Seçilen Tarih: {selected.strftime('%d %B %Y')} ({TURKISH_DAYS[selected.weekday()]})**")
+    
+    # Gizli butonlarla gün seçimi
+    cols = st.columns(7)
+    day_count = 0
+    for week in cal:
+        for day in week:
+            if day != 0:
+                form_key = f"{key}_day_{day}"
+                with cols[day_count % 7]:
+                    if st.button(str(day), key=form_key, use_container_width=True, 
+                                help=f"{day} {TURKISH_MONTHS[st.session_state[month_key]-1]} {st.session_state[year_key]}"):
+                        st.session_state[state_key] = datetime(st.session_state[year_key], st.session_state[month_key], day).date()
+                        st.rerun()
+                day_count += 1
+    
+    return st.session_state[state_key]
 
 # ===================== GİRİŞ =====================
 def check_password():
@@ -58,7 +199,6 @@ def check_password():
     
     st.markdown("""<style>
         .login-box { max-width:400px; margin:80px auto; padding:2rem; background:white; border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.15); text-align:center; }
-        .login-box h2 { color:#1a1a2e; }
     </style>""", unsafe_allow_html=True)
     
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
@@ -82,6 +222,7 @@ def check_password():
             st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
+    st.info("💡 **Demo:** Kullanıcı: `ADMIN` | Şifre: `Elma*`")
     return False
 
 # ===================== SABİTLER =====================
@@ -89,7 +230,7 @@ LOOKBACK, STEPS, WORKERS = 150, [5,10,15,30,60,90], 10
 STRATEGY = {'RSI_max':65, 'MA200_diff_min':-30, 'Stochastic_max':80, 'ADX_min':3, 'Volume_MA_ratio':0.3, 'Volume_trend_days':2, 'Price_volume_correlation':0.05, 'MFI_max':70}
 FILTERS = {'Min_Perf_Score':65, 'Max_RSI':60, 'Max_ADX':45, 'Min_Volume_MA':0.8, 'Max_MFI':65}
 
-# ===================== VERİ & GÖSTERGELER =====================
+# ===================== VERİ & GÖSTERGELER (ÖNCEKİYLE AYNI) =====================
 @st.cache_data(ttl=3600)
 def get_lists():
     try:
@@ -108,8 +249,18 @@ def get_data(symbol, date_str):
         if not sym.endswith(".IS"): sym += ".IS"
         df = bp.Ticker(sym).history(start=(ref-timedelta(days=LOOKBACK*2)).strftime('%Y-%m-%d'), end=(ref+timedelta(days=LOOKBACK)).strftime('%Y-%m-%d'))
         if df is None or len(df)==0: return None
-        df = df.reset_index().rename(columns={'index':'Date'}) if 'Date' not in df.columns else df
+        df = df.reset_index()
+        date_col = next((c for c in df.columns if 'date' in c.lower() or 'index' in c.lower()), None)
+        df = df.rename(columns={date_col:'Date'} if date_col else {'index':'Date'})
         df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+        for c in df.columns:
+            cl = c.lower()
+            if 'open' in cl: df.rename(columns={c:'Open'}, inplace=True)
+            elif 'high' in cl: df.rename(columns={c:'High'}, inplace=True)
+            elif 'low' in cl: df.rename(columns={c:'Low'}, inplace=True)
+            elif 'close' in cl or 'kapanis' in cl: df.rename(columns={c:'Close'}, inplace=True)
+            elif 'volume' in cl or 'hacim' in cl: df.rename(columns={c:'Volume'}, inplace=True)
+        if 'Volume' not in df.columns: df['Volume'] = 0
         return df[['Date','Open','High','Low','Close','Volume']].sort_values('Date')
     except:
         return None
@@ -122,9 +273,6 @@ def calc_indicators(df):
     g = d.where(d>0,0).rolling(14).mean()
     l = (-d.where(d<0,0)).rolling(14).mean()
     df['RSI'] = 100-(100/(1+g/l))
-    e1 = df['Close'].ewm(span=12,adjust=False).mean()
-    e2 = df['Close'].ewm(span=26,adjust=False).mean()
-    df['MACD'] = e1-e2
     df['Stochastic'] = 100*(df['Close']-df['Low'].rolling(14).min())/(df['High'].rolling(14).max()-df['Low'].rolling(14).min())
     tr = np.maximum(df['High']-df['Low'], np.maximum(abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())))
     atr = tr.rolling(14).mean()
@@ -133,14 +281,14 @@ def calc_indicators(df):
     df['ADX'] = (100*(abs(dp.rolling(14).mean()-dm.rolling(14).mean())/(dp.rolling(14).mean()+dm.rolling(14).mean()))).rolling(14).mean()
     df['VolRatio'] = df['Volume']/df['VMA20']
     tp = (df['High']+df['Low']+df['Close'])/3
-    mf = tp*df['Volume']
-    pf = mf.where(tp>tp.shift(),0).rolling(14).sum()
-    nf = mf.where(tp<tp.shift(),0).rolling(14).sum()
+    pf = (tp.where(tp>tp.shift(),0)*df['Volume']).rolling(14).sum()
+    nf = (tp.where(tp<tp.shift(),0)*df['Volume']).rolling(14).sum()
     df['MFI'] = 100-(100/(1+pf/nf))
     return df
 
 def score_stock(r):
-    s, rs, ad, vl, mf = 0, r['RSI'], r['ADX'], r['VolRatio'], r['MFI']
+    s = 0
+    rs, ad, vl, mf = r['RSI'], r['ADX'], r['VolRatio'], r['MFI']
     if 30<=rs<=40: s+=30
     elif 40<rs<=50: s+=25
     elif 50<rs<=55: s+=20
@@ -180,8 +328,7 @@ def scan_stock(sym, date_str):
         ref = pd.to_datetime(date_str).normalize()
         dates = df['Date'].dt.normalize()
         idx = next((i for i,d in enumerate(dates) if d>=ref), None)
-        if idx is None: return None
-        if not check_signal(df, idx): return None
+        if idx is None or not check_signal(df, idx): return None
         
         cur = df['Close'].iloc[idx]
         r = {'Hisse':sym, 'Tarih':df.iloc[idx]['Date'].strftime('%Y-%m-%d'), 'Kapanis':round(cur,2),
@@ -227,6 +374,7 @@ def main():
         .header { font-size:2rem; font-weight:700; text-align:center; padding:1rem;
                   background:linear-gradient(135deg,#667eea,#764ba2); color:white;
                   border-radius:15px; margin-bottom:1.5rem; }
+        .stButton>button { width:100%; border-radius:8px; font-weight:600; }
     </style>""", unsafe_allow_html=True)
     
     c1, c2 = st.columns([8,1])
@@ -234,7 +382,6 @@ def main():
     with c2:
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
             st.session_state.clear()
-            st.session_state.authenticated = False
             st.rerun()
     
     with st.sidebar:
@@ -248,11 +395,13 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih","Aralık","Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = hybrid_date_selector("Tarih", datetime(2025,7,7), "t")
+            d = turkish_calendar("Tarih Seçin", datetime(2025,7,7), "tek")
             start = end = d
         elif tip == "Aralık":
-            start = hybrid_date_selector("Başlangıç", datetime(2025,7,7), "b")
-            end = hybrid_date_selector("Bitiş", datetime(2025,7,10), "e")
+            st.markdown("**Başlangıç**")
+            start = turkish_calendar("Başlangıç Tarihi", datetime(2025,7,7), "bas")
+            st.markdown("**Bitiş**")
+            end = turkish_calendar("Bitiş Tarihi", datetime(2025,7,10), "bit")
         else:
             c1,c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020,2031), index=5, key="yy")
