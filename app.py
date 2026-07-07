@@ -200,14 +200,21 @@ def get_lists():
     except:
         return {'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
 
-def get_data(symbol, date_str):
+def get_data(symbol, date_str, is_backtest=True):
+    """Veri çekme - Backtest için ileri veri, canlı için bugüne kadar veri çeker"""
     try:
         ref = pd.to_datetime(date_str)
         sym = symbol.upper().strip()
         if not sym.endswith(".IS"): sym += ".IS"
         
         start = (ref - timedelta(days=LOOKBACK*2)).strftime('%Y-%m-%d')
-        end = (ref + timedelta(days=LOOKBACK)).strftime('%Y-%m-%d')
+        
+        if is_backtest:
+            # Backtest modu: ileri veriyi de çek (forward return hesaplamak için)
+            end = (ref + timedelta(days=LOOKBACK)).strftime('%Y-%m-%d')
+        else:
+            # Canlı mod: sadece bugüne kadar olan veriyi çek
+            end = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
         
         ticker = bp.Ticker(sym)
         df = ticker.history(start=start, end=end)
@@ -423,16 +430,9 @@ def apply_filter(r, filters):
     if r['Perf_Skor'] < filters.get('Min_Perf_Score', 0): return False
     return True
 
-def apply_filters_multi(r, filters_list):
-    """Çoklu filtre seviyesini sırayla uygula"""
-    for filters in filters_list:
-        if not apply_filter(r, filters):
-            return False
-    return True
-
-def scan_stock(sym, date_str, strategy, filters, mid_filters=None, support_filters=None, tight_filters=None):
+def scan_stock(sym, date_str, strategy, filters, mid_filters=None, support_filters=None, tight_filters=None, is_backtest=True):
     try:
-        df = get_data(sym, date_str)
+        df = get_data(sym, date_str, is_backtest)
         if df is None: return None
         
         df = calc_indicators(df)
@@ -466,34 +466,27 @@ def scan_stock(sym, date_str, strategy, filters, mid_filters=None, support_filte
         
         # ÜÇ AŞAMALI FİLTRELEME (yeni profil için)
         if mid_filters is not None or support_filters is not None or tight_filters is not None:
-            # 2A Aşaması: Temel süzgeç
-            if mid_filters and not apply_filter(r, mid_filters):
-                return None
-            # 2B Aşaması: Destek süzgeç
-            if support_filters and not apply_filter(r, support_filters):
-                return None
-            # 3. Aşama: Sıkı filtre
-            if tight_filters and not apply_filter(r, tight_filters):
-                return None
+            if mid_filters and not apply_filter(r, mid_filters): return None
+            if support_filters and not apply_filter(r, support_filters): return None
+            if tight_filters and not apply_filter(r, tight_filters): return None
         else:
-            # İKİ AŞAMALI FİLTRELEME (eski profil için)
-            if not apply_filter(r, filters):
-                return None
+            if not apply_filter(r, filters): return None
         
-        # Forward getiriler (sadece performans ölçümü için)
-        for s in STEPS:
-            if idx+s < len(df):
-                r[f'+{s}G_Getiri%'] = round(((df['Close'].iloc[idx+s] - cur) / cur) * 100, 2)
+        # Forward getiriler (sadece backtest modunda ve veri varsa)
+        if is_backtest:
+            for s in STEPS:
+                if idx+s < len(df):
+                    r[f'+{s}G_Getiri%'] = round(((df['Close'].iloc[idx+s] - cur) / cur) * 100, 2)
         
         return r
     except:
         return None
 
-def run_scan(symbols, date, strategy, filters, mid_filters=None, support_filters=None, tight_filters=None):
+def run_scan(symbols, date, strategy, filters, mid_filters=None, support_filters=None, tight_filters=None, is_backtest=True):
     results = []
     ds = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futures = {ex.submit(scan_stock, s, ds, strategy, filters, mid_filters, support_filters, tight_filters):s for s in symbols}
+        futures = {ex.submit(scan_stock, s, ds, strategy, filters, mid_filters, support_filters, tight_filters, is_backtest):s for s in symbols}
         for f in as_completed(futures):
             try:
                 r = f.result()
@@ -518,22 +511,34 @@ def main():
     
     defaults = {
         "strategy_preset": "🎯 Üç Aşamalı Kademeli",
-        "df": None, "ok": False, "t": 0, "days": 0
+        "df": None, "ok": False, "t": 0, "days": 0,
+        "is_backtest": True  # Varsayılan: Backtest modu
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
     
-    c1, c2, c3 = st.columns([7,1,1])
+    c1, c2, c3, c4 = st.columns([6,1,1,1])
     with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA - ÜÇ AŞAMALI KADEMELİ</div>', unsafe_allow_html=True)
     with c2:
+        # Backtest/Canlı mod toggle
+        if st.button("🔄 Mod", use_container_width=True, help="Backtest/Canlı mod değiştir"):
+            st.session_state.is_backtest = not st.session_state.is_backtest
+            st.rerun()
+    with c3:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
             st.rerun()
-    with c3:
+    with c4:
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
             st.session_state.clear()
             st.rerun()
+    
+    # Mod göstergesi
+    if st.session_state.is_backtest:
+        st.info("📊 **BACKTEST MODU** - Geçmiş tarihleri tarar, forward getirileri hesaplar")
+    else:
+        st.warning("🔴 **CANLI MOD** - Sadece bugüne kadar olan verileri kullanır, forward getiri hesaplamaz")
     
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
@@ -579,15 +584,18 @@ def main():
         st.markdown("### 📅 Tarama Aralığı")
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
+        # Canlı modda varsayılan tarihi bugün yap
+        default_date = datetime.now().date() if not st.session_state.is_backtest else datetime(2025, 9, 1)
+        
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2025,9,1), "tek")
+            d = turkish_date_picker("Tarih Seçin", default_date, "tek")
             start = end = d
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
             with c1:
-                start = turkish_date_picker("Başlangıç", datetime(2025,9,1), "bas")
+                start = turkish_date_picker("Başlangıç", default_date, "bas")
             with c2:
-                end = turkish_date_picker("Bitiş", datetime(2025,9,30), "bit")
+                end = turkish_date_picker("Bitiş", default_date, "bit")
         else:
             c1, c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020, 2031), index=5, key="yy")
@@ -614,7 +622,7 @@ def main():
             
             for i, day in enumerate(bdays):
                 txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{days}")
-                res = run_scan(symbols, day, strategy, filters, mid_filters, support_filters, tight_filters)
+                res = run_scan(symbols, day, strategy, filters, mid_filters, support_filters, tight_filters, st.session_state.is_backtest)
                 if res:
                     all_signals.extend(res)
                 bar.progress((i+1)/days)
@@ -646,48 +654,58 @@ def main():
         with c2:
             st.metric("Ort. Skor", f"{df['Perf_Skor'].mean():.0f}")
         
-        r30 = df['+30G_Getiri%'].dropna()
-        with c3:
-            st.metric("30G Ort. Getiri", f"%{r30.mean():.1f}" if len(r30) > 0 else "N/A")
-        with c4:
-            if len(r30) > 0:
-                st.metric("30G Kazanma", f"%{(r30>0).sum()/len(r30)*100:.0f}")
-            else:
-                st.metric("30G Kazanma", "N/A")
+        # Forward getiri kolonları varsa göster
+        if '+30G_Getiri%' in df.columns:
+            r30 = df['+30G_Getiri%'].dropna()
+            with c3:
+                st.metric("30G Ort. Getiri", f"%{r30.mean():.1f}" if len(r30) > 0 else "N/A")
+            with c4:
+                if len(r30) > 0:
+                    st.metric("30G Kazanma", f"%{(r30>0).sum()/len(r30)*100:.0f}")
+                else:
+                    st.metric("30G Kazanma", "N/A")
+        else:
+            with c3:
+                st.metric("30G Ort. Getiri", "Canlı Mod")
+            with c4:
+                st.metric("30G Kazanma", "Canlı Mod")
         
         st.markdown("### 📋 Sinyaller")
         st.dataframe(df, use_container_width=True, height=500)
         
-        if '+30G_Getiri%' in df.columns and len(r30) > 0:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                fig = go.Figure()
-                fig.add_trace(go.Histogram(x=r30, nbinsx=20, marker_color='#667eea'))
-                fig.add_vline(x=0, line_dash="dash", line_color="red")
-                fig.add_vline(x=r30.mean(), line_dash="dash", line_color="green")
-                fig.update_layout(title="30G Getiri Dağılımı", xaxis_title="% Getiri", yaxis_title="Sinyal", showlegend=False, height=350)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                win_rate = (r30 > 0).sum() / len(r30) * 100
-                st.markdown(f"""
-                **30G İstatistikleri:**
-                - Ortalama: **%{r30.mean():.1f}**
-                - Medyan: %{r30.median():.1f}
-                - Maks: %{r30.max():.1f} | Min: %{r30.min():.1f}
-                - Kazanma: **%{win_rate:.0f}**
-                - Risk/Getiri: {r30.mean()/r30.std():.2f}
-                """)
+        # Sadece backtest modunda grafik göster
+        if st.session_state.is_backtest and '+30G_Getiri%' in df.columns:
+            r30 = df['+30G_Getiri%'].dropna()
+            if len(r30) > 0:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    fig = go.Figure()
+                    fig.add_trace(go.Histogram(x=r30, nbinsx=20, marker_color='#667eea'))
+                    fig.add_vline(x=0, line_dash="dash", line_color="red")
+                    fig.add_vline(x=r30.mean(), line_dash="dash", line_color="green")
+                    fig.update_layout(title="30G Getiri Dağılımı", xaxis_title="% Getiri", yaxis_title="Sinyal", showlegend=False, height=350)
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    win_rate = (r30 > 0).sum() / len(r30) * 100
+                    st.markdown(f"""
+                    **30G İstatistikleri:**
+                    - Ortalama: **%{r30.mean():.1f}**
+                    - Medyan: %{r30.median():.1f}
+                    - Maks: %{r30.max():.1f} | Min: %{r30.min():.1f}
+                    - Kazanma: **%{win_rate:.0f}**
+                    - Risk/Getiri: {r30.mean()/r30.std():.2f}
+                    """)
         
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 CSV", df.to_csv(index=False), "sinyaller_uc_asamali.csv", "text/csv")
+            st.download_button("📊 CSV", df.to_csv(index=False), "sinyaller.csv", "text/csv")
         with c2:
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📑 Excel", buf.getvalue(), "sinyaller_uc_asamali.xlsx",
+            st.download_button("📑 Excel", buf.getvalue(), "sinyaller.xlsx",
                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     elif not btn:
@@ -702,7 +720,7 @@ def main():
         | 2B Aşama | Destek Süzgeç | MFI:35-68, Stoch:5-70, BB:0.05-0.7 |
         | 3. Aşama | Sıkı Filtre | 5 aylık kazanan aralıkları |
         
-        Kademeli filtreleme ile daha kaliteli sinyaller.
+        **🔄 Mod butonu** ile Backtest/Canlı mod arasında geçiş yapabilirsiniz.
         """)
 
 if __name__ == "__main__":
