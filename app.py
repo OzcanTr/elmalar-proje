@@ -94,7 +94,6 @@ def check_password():
             st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
-    st.info("💡 **Demo:** Kullanıcı: `ADMIN` | Şifre: `Elma*`")
     return False
 
 # ===================== CSS =====================
@@ -107,50 +106,31 @@ st.markdown("""<style>
 # ===================== SABİTLER =====================
 LOOKBACK, STEPS, WORKERS = 200, [5,10,15,30,60,90], 10
 
-# TÜM STRATEJİ PROFİLLERİ
+# STRATEJİ PROFİLLERİ
 STRATEGY_PRESETS = {
-    "🔬 4 Aylık Nihai (Tem-Ağu-Eyl-Eki)": {
+    "🎯 İki Aşamalı Optimal": {
+        # 1. AŞAMA: Geniş havuz - sinyal kaçırma
         'strategy': {
-            # 4 aylık kazanan sinyallerin ortak min-max değerleri
-            'RSI_max': 52, 'RSI_min': 38,
-            'MA200_diff_min': -25, 'MA200_diff_max': 20,
-            'Stochastic_max': 58, 'Stochastic_min': 4,
-            'ADX_min': 14, 'ADX_max': 38,
-            'Volume_MA_ratio': 0.6, 'Volume_MA_max': 1.4,
-            'MFI_max': 61, 'MFI_min': 45,
-            'BB_Position_min': 0.07, 'BB_Position_max': 0.55,
+            'RSI_max': 70, 'RSI_min': 20,
+            'MA200_diff_min': -35, 'MA200_diff_max': 30,
+            'Stochastic_max': 85, 'Stochastic_min': 0,
+            'ADX_min': 3, 'ADX_max': 50,
+            'Volume_MA_ratio': 0.3, 'Volume_MA_max': 5.0,
+            'MFI_max': 75, 'MFI_min': 20,
         },
+        # 2. AŞAMA: 4 aylık kazananların ortak aralıkları ile daralt
         'filters': {
-            'Min_Perf_Score': 80,
+            'Min_Perf_Score': 70,
             'Max_RSI': 52, 'Min_RSI': 38,
             'Max_ADX': 38, 'Min_ADX': 14,
             'Min_Volume_MA': 0.6, 'Max_Volume_MA': 1.4,
             'Max_MFI': 61, 'Min_MFI': 45,
             'Max_BB_Position': 0.55, 'Min_BB_Position': 0.07,
+            'Max_Stochastic': 58, 'Min_Stochastic': 4,
         },
-        'desc': '🔬 **4 aylık (Tem-Ağu-Eyl-Eki) kazanan sinyallerin ortak aralıkları.** En güvenilir strateji. 5G-10G-15G-30G pozitif.'
+        'desc': '🎯 1.Aşama: Geniş havuz | 2.Aşama: 4 aylık kazanan aralıkları'
     },
-    "🔬 3 Aylık (Tem-Ağu-Eyl)": {
-        'strategy': {
-            'RSI_max': 52, 'RSI_min': 37,
-            'MA200_diff_min': -25, 'MA200_diff_max': 20,
-            'Stochastic_max': 58, 'Stochastic_min': 5,
-            'ADX_min': 16, 'ADX_max': 38,
-            'Volume_MA_ratio': 0.6, 'Volume_MA_max': 1.35,
-            'MFI_max': 63, 'MFI_min': 45,
-            'BB_Position_min': 0.07, 'BB_Position_max': 0.55,
-        },
-        'filters': {
-            'Min_Perf_Score': 85,
-            'Max_RSI': 52, 'Min_RSI': 37,
-            'Max_ADX': 38, 'Min_ADX': 16,
-            'Min_Volume_MA': 0.6, 'Max_Volume_MA': 1.35,
-            'Max_MFI': 63, 'Min_MFI': 45,
-            'Max_BB_Position': 0.55, 'Min_BB_Position': 0.07,
-        },
-        'desc': '🔬 Tem+Ağu+Eyl 15G&30G pozitif sinyallerin ortak aralıkları.'
-    },
-    "📊 Dengeli (Önerilen)": {
+    "📊 Dengeli": {
         'strategy': {
             'RSI_max': 65, 'RSI_min': 25, 'MA200_diff_min': -30, 'MA200_diff_max': 20,
             'Stochastic_max': 80, 'Stochastic_min': 0, 'ADX_min': 3, 'ADX_max': 45,
@@ -162,7 +142,7 @@ STRATEGY_PRESETS = {
         },
         'desc': '📊 Orta seviye filtreler, dengeli sinyal sayısı ve kalite.'
     },
-    "🚀 Agresif (Çok Sinyal)": {
+    "🚀 Agresif": {
         'strategy': {
             'RSI_max': 70, 'RSI_min': 20, 'MA200_diff_min': -35, 'MA200_diff_max': 30,
             'Stochastic_max': 85, 'Stochastic_min': 0, 'ADX_min': 3, 'ADX_max': 50,
@@ -321,32 +301,33 @@ def calc_indicators(df):
 def score_stock(r):
     s = 0
     rs = r['RSI']
-    # 4 aylık ideal aralık: 38-52
-    if 42 <= rs <= 48: s += 30
-    elif 38 <= rs <= 52: s += 22
-    elif 35 <= rs <= 55: s += 12
+    if 38 <= rs <= 42: s += 30
+    elif 42 < rs <= 48: s += 28
+    elif 48 < rs <= 52: s += 22
+    elif 35 <= rs < 38: s += 15
+    elif 52 < rs <= 55: s += 10
     else: s += 3
     
     ad = r['ADX']
-    # 4 aylık ideal aralık: 14-38
-    if 16 <= ad <= 25: s += 28
-    elif 14 <= ad <= 38: s += 18
+    if 14 <= ad < 20: s += 30
+    elif 20 <= ad < 25: s += 28
+    elif 25 <= ad < 30: s += 22
+    elif 30 <= ad <= 38: s += 15
     else: s += 5
     
     vl = r['VolRatio']
-    # 4 aylık ideal aralık: 0.6-1.4
     if 0.8 <= vl <= 1.2: s += 25
-    elif 0.6 <= vl <= 1.4: s += 15
-    else: s += 3
+    elif 0.6 <= vl < 0.8: s += 20
+    elif 1.2 < vl <= 1.4: s += 18
+    else: s += 5
     
     mf = r['MFI']
-    # 4 aylık ideal aralık: 45-61
     if 48 <= mf <= 58: s += 18
-    elif 45 <= mf <= 61: s += 10
-    else: s += 2
+    elif 45 <= mf <= 61: s += 12
+    else: s += 3
     
     stoch = r.get('Stochastic', 50)
-    if 5 <= stoch <= 30: s += 15
+    if 4 <= stoch <= 30: s += 15
     elif 30 < stoch <= 58: s += 8
     
     bb_pos = r.get('BB_Position', 0.5)
@@ -356,6 +337,7 @@ def score_stock(r):
     return min(s, 100)
 
 def check_signal(df, i, strategy, filters):
+    """1. AŞAMA: Geniş sinyal kontrolü"""
     try:
         rsi = df['RSI'].iloc[i]
         if pd.isna(rsi) or rsi > strategy['RSI_max'] or rsi < strategy['RSI_min']:
@@ -387,16 +369,26 @@ def check_signal(df, i, strategy, filters):
         if pd.isna(mfi) or mfi > strategy['MFI_max'] or mfi < mfi_min:
             return False
         
-        if 'BB_Position_min' in strategy or 'BB_Position_max' in strategy:
-            bb_pos = df['BB_Position'].iloc[i]
-            bb_min = strategy.get('BB_Position_min', -99)
-            bb_max = strategy.get('BB_Position_max', 99)
-            if pd.notna(bb_pos) and (bb_pos < bb_min or bb_pos > bb_max):
-                return False
-        
         return True
     except:
         return False
+
+def apply_filters(r, filters):
+    """2. AŞAMA: Sıkı filtreler ile daralt"""
+    if 'Max_RSI' in filters and r['RSI'] > filters['Max_RSI']: return False
+    if 'Min_RSI' in filters and r['RSI'] < filters['Min_RSI']: return False
+    if 'Max_ADX' in filters and r['ADX'] > filters['Max_ADX']: return False
+    if 'Min_ADX' in filters and r['ADX'] < filters['Min_ADX']: return False
+    if r['VolRatio'] < filters.get('Min_Volume_MA', 0): return False
+    if 'Max_Volume_MA' in filters and r['VolRatio'] > filters['Max_Volume_MA']: return False
+    if 'Max_MFI' in filters and r['MFI'] > filters['Max_MFI']: return False
+    if 'Min_MFI' in filters and r['MFI'] < filters['Min_MFI']: return False
+    if 'Max_Stochastic' in filters and r.get('Stochastic', 0) > filters['Max_Stochastic']: return False
+    if 'Min_Stochastic' in filters and r.get('Stochastic', 100) < filters['Min_Stochastic']: return False
+    if 'Max_BB_Position' in filters and r.get('BB_Position', 0) > filters['Max_BB_Position']: return False
+    if 'Min_BB_Position' in filters and r.get('BB_Position', 1) < filters['Min_BB_Position']: return False
+    if r['Perf_Skor'] < filters.get('Min_Perf_Score', 0): return False
+    return True
 
 def scan_stock(sym, date_str, strategy, filters):
     try:
@@ -409,7 +401,10 @@ def scan_stock(sym, date_str, strategy, filters):
         ref = pd.to_datetime(date_str).normalize()
         dates = df['Date'].dt.normalize()
         idx = next((i for i,d in enumerate(dates) if d>=ref), None)
-        if idx is None or not check_signal(df, idx, strategy, filters): return None
+        if idx is None: return None
+        
+        # 1. AŞAMA: Geniş sinyal kontrolü
+        if not check_signal(df, idx, strategy, filters): return None
         
         cur = df['Close'].iloc[idx]
         r = {
@@ -429,22 +424,13 @@ def scan_stock(sym, date_str, strategy, filters):
         
         r['Perf_Skor'] = score_stock(r)
         
+        # 2. AŞAMA: Sıkı filtreler
+        if not apply_filters(r, filters): return None
+        
+        # Forward getiriler (sadece performans ölçümü için)
         for s in STEPS:
             if idx+s < len(df):
                 r[f'+{s}G_Getiri%'] = round(((df['Close'].iloc[idx+s] - cur) / cur) * 100, 2)
-        
-        # Filtreler
-        if 'Max_RSI' in filters and r['RSI'] > filters['Max_RSI']: return None
-        if 'Min_RSI' in filters and r['RSI'] < filters['Min_RSI']: return None
-        if 'Max_ADX' in filters and r['ADX'] > filters['Max_ADX']: return None
-        if 'Min_ADX' in filters and r['ADX'] < filters['Min_ADX']: return None
-        if r['VolRatio'] < filters.get('Min_Volume_MA', 0): return None
-        if 'Max_Volume_MA' in filters and r['VolRatio'] > filters['Max_Volume_MA']: return None
-        if 'Max_MFI' in filters and r['MFI'] > filters['Max_MFI']: return None
-        if 'Min_MFI' in filters and r['MFI'] < filters['Min_MFI']: return None
-        if 'Max_BB_Position' in filters and r.get('BB_Position', 0) > filters['Max_BB_Position']: return None
-        if 'Min_BB_Position' in filters and r.get('BB_Position', 1) < filters['Min_BB_Position']: return None
-        if r['Perf_Skor'] < filters.get('Min_Perf_Score', 0): return None
         
         return r
     except:
@@ -478,7 +464,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "🔬 4 Aylık Nihai (Tem-Ağu-Eyl-Eki)",
+        "strategy_preset": "🎯 İki Aşamalı Optimal",
         "df": None, "ok": False, "t": 0, "days": 0
     }
     for k, v in defaults.items():
@@ -486,7 +472,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO - 4 Aylık Nihai</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA - İKİ AŞAMALI</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -508,17 +494,22 @@ def main():
         
         st.caption(STRATEGY_PRESETS[preset]['desc'])
         
-        with st.expander("📋 Strateji Detayı"):
+        with st.expander("📋 İki Aşamalı Filtre Detayı"):
             st.markdown(f"""
-            **Sinyal Koşulları:**
-            - RSI: **{strategy['RSI_min']}-{strategy['RSI_max']}**
-            - ADX: **{strategy['ADX_min']}-{strategy.get('ADX_max', '∞')}**
-            - Stochastic: **{strategy.get('Stochastic_min', 0)}-{strategy['Stochastic_max']}**
-            - VolRatio: **{strategy['Volume_MA_ratio']}-{strategy.get('Volume_MA_max', '∞')}x**
-            - MFI: **{strategy.get('MFI_min', 0)}-{strategy['MFI_max']}**
-            - BB Position: **{strategy.get('BB_Position_min', '-∞')}-{strategy.get('BB_Position_max', '∞')}**
+            **1. Aşama - Geniş Havuz:**
+            - RSI: {strategy['RSI_min']}-{strategy['RSI_max']}
+            - ADX: {strategy['ADX_min']}-{strategy.get('ADX_max', '∞')}
+            - VolRatio: >{strategy['Volume_MA_ratio']}x
+            - MFI: {strategy.get('MFI_min', 0)}-{strategy['MFI_max']}
             
-            **Filtre Skor:** > {filters['Min_Perf_Score']}
+            **2. Aşama - Dar Filtre:**
+            - RSI: {filters.get('Min_RSI', '-')}-{filters.get('Max_RSI', '-')}
+            - ADX: {filters.get('Min_ADX', '-')}-{filters.get('Max_ADX', '-')}
+            - VolRatio: {filters.get('Min_Volume_MA', '-')}-{filters.get('Max_Volume_MA', '-')}x
+            - MFI: {filters.get('Min_MFI', '-')}-{filters.get('Max_MFI', '-')}
+            - Stochastic: {filters.get('Min_Stochastic', '-')}-{filters.get('Max_Stochastic', '-')}
+            - BB: {filters.get('Min_BB_Position', '-')}-{filters.get('Max_BB_Position', '-')}
+            - Skor > {filters.get('Min_Perf_Score', '-')}
             """)
         
         st.markdown("---")
@@ -559,7 +550,7 @@ def main():
     if btn:
         t0 = time.time()
         
-        with st.spinner(f'🔍 {days} gün taranıyor...'):
+        with st.spinner(f'🔍 İki aşamalı tarama... {days} gün'):
             all_signals = []
             bar = st.progress(0)
             txt = st.empty()
@@ -589,7 +580,7 @@ def main():
     if st.session_state.get('ok'):
         df = st.session_state.df
         
-        st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün | {preset}")
+        st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün")
         
         c1, c2, c3, c4 = st.columns(4)
         
@@ -634,31 +625,25 @@ def main():
         
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 CSV", df.to_csv(index=False), f"sinyaller_nihai.csv", "text/csv")
+            st.download_button("📊 CSV", df.to_csv(index=False), "sinyaller_iki_asamali.csv", "text/csv")
         with c2:
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📑 Excel", buf.getvalue(), f"sinyaller_nihai.xlsx",
+            st.download_button("📑 Excel", buf.getvalue(), "sinyaller_iki_asamali.xlsx",
                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown("""
-        **4 Aylık Nihai Strateji (Tem-Ağu-Eyl-Eki):**
+        **🎯 İki Aşamalı Optimal Strateji:**
         
-        🔬 4 ayda da **5G-10G-15G-30G pozitif** kazanan sinyallerin ortak aralıkları:
+        | Aşama | Görev | Filtre |
+        |-------|-------|--------|
+        | 1. Aşama | Geniş Havuz | RSI:20-70, ADX:3-50, Vol>0.3x |
+        | 2. Aşama | Dar Filtre | RSI:38-52, ADX:14-38, Vol:0.6-1.4x |
         
-        | İndikatör | Aralık |
-        |-----------|--------|
-        | RSI | 38-52 |
-        | ADX | 14-38 |
-        | VolRatio | 0.6-1.4x |
-        | MFI | 45-61 |
-        | Stochastic | 4-58 |
-        | BB Position | 0.07-0.55 |
-        
-              En güvenilir, piyasa koşullarından bağımsız strateji.
+        4 aylık kazanan sinyallerin ortak aralıkları ile optimize edildi.
         """)
 
 if __name__ == "__main__":
