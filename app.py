@@ -102,51 +102,44 @@ st.markdown("""<style>
     .header { font-size:1.8rem; font-weight:700; text-align:center; padding:1rem;
               background:linear-gradient(135deg,#667eea,#764ba2); color:white;
               border-radius:15px; margin-bottom:1.5rem; }
-    .signal-badge { display:inline-block; padding:4px 12px; border-radius:15px; font-weight:600; }
-    .green { background:#d4edda; color:#155724; }
-    .red { background:#f8d7da; color:#721c24; }
-    .yellow { background:#fff3cd; color:#856404; }
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER =====================
 LOOKBACK, STEPS, WORKERS = 200, [5,10,15,30,60,90], 10
 
-# Varsayılan Strateji (Optimize edilmiş)
 DEFAULT_STRATEGY = {
     'RSI_max': 65,
-    'RSI_min': 30,
+    'RSI_min': 25,
     'MA200_diff_min': -30,
-    'MA200_diff_max': 20,    # MA200'ün %20 üzerine kadar izin ver
+    'MA200_diff_max': 20,
     'Stochastic_max': 80,
     'ADX_min': 3,
-    'Volume_MA_ratio': 0.5,  # Hacim filtresini gevşettik
+    'Volume_MA_ratio': 0.5,
     'MFI_max': 70,
-    'MACD_Hist_Up': False,   # MACD filtresini kaldırdık (çok sıkıydı)
-    'BB_Near_Support': 0.5,  # Bollinger pozisyonu gevşetildi
+    'MACD_Hist_Up': False,
 }
 
 DEFAULT_FILTERS = {
-    'Min_Perf_Score': 55,    # 65'ten 55'e düşürüldü
-    'Max_RSI': 62,           # 60'tan 62'ye çıkarıldı
+    'Min_Perf_Score': 55,
+    'Max_RSI': 62,
     'Max_ADX': 45,
-    'Min_Volume_MA': 0.6,    # 0.8'den 0.6'ya düşürüldü
-    'Max_MFI': 68,           # 65'ten 68'e çıkarıldı
-    'Min_MACD_Hist': -0.1,   # Hafif negatif MACD'ye izin ver
-    'Max_BB_Position': 0.7,  # 0.5'ten 0.7'ye çıkarıldı
+    'Min_Volume_MA': 0.6,
+    'Max_MFI': 68,
+    'Min_MACD_Hist': -0.1,
+    'Max_BB_Position': 0.7,
 }
 
-# Preset stratejiler
 STRATEGY_PRESETS = {
     "Dengeli (Önerilen)": {
         'strategy': DEFAULT_STRATEGY.copy(),
         'filters': DEFAULT_FILTERS.copy()
     },
     "Agresif (Çok Sinyal)": {
-        'strategy': {**DEFAULT_STRATEGY, 'RSI_max': 70, 'MA200_diff_max': 30, 'Volume_MA_ratio': 0.3, 'MACD_Hist_Up': False},
+        'strategy': {**DEFAULT_STRATEGY, 'RSI_max': 70, 'MA200_diff_max': 30, 'Volume_MA_ratio': 0.3},
         'filters': {**DEFAULT_FILTERS, 'Min_Perf_Score': 45, 'Max_RSI': 65, 'Min_Volume_MA': 0.4, 'Max_MFI': 72}
     },
     "Muhafazakar (Az Sinyal)": {
-        'strategy': {**DEFAULT_STRATEGY, 'RSI_max': 60, 'MA200_diff_max': 10, 'Volume_MA_ratio': 0.8, 'MACD_Hist_Up': True},
+        'strategy': {**DEFAULT_STRATEGY, 'RSI_max': 60, 'MA200_diff_max': 10, 'Volume_MA_ratio': 0.8},
         'filters': {**DEFAULT_FILTERS, 'Min_Perf_Score': 70, 'Max_RSI': 55, 'Min_Volume_MA': 1.0, 'Max_MFI': 60}
     }
 }
@@ -287,7 +280,6 @@ def calc_indicators(df):
     nf = mf.where(tp<tp.shift(),0).rolling(14).sum()
     clean_df['MFI'] = 100-(100/(1+pf/nf))
     
-    # MACD
     ema12 = clean_df['Close'].ewm(span=12).mean()
     ema26 = clean_df['Close'].ewm(span=26).mean()
     clean_df['MACD'] = ema12 - ema26
@@ -295,28 +287,20 @@ def calc_indicators(df):
     clean_df['MACD_Hist'] = clean_df['MACD'] - clean_df['MACD_Signal']
     clean_df['MACD_Hist_Up'] = clean_df['MACD_Hist'] > clean_df['MACD_Hist'].shift(1)
     
-    # Bollinger Bands
     clean_df['BB_Mid'] = clean_df['Close'].rolling(20).mean()
     clean_df['BB_Std'] = clean_df['Close'].rolling(20).std()
     clean_df['BB_Upper'] = clean_df['BB_Mid'] + 2 * clean_df['BB_Std']
     clean_df['BB_Lower'] = clean_df['BB_Mid'] - 2 * clean_df['BB_Std']
     clean_df['BB_Position'] = (clean_df['Close'] - clean_df['BB_Lower']) / (clean_df['BB_Upper'] - clean_df['BB_Lower'])
     
-    # OBV
     clean_df['OBV'] = (np.sign(clean_df['Close'].diff()) * clean_df['Volume']).cumsum()
     clean_df['OBV_MA'] = clean_df['OBV'].rolling(20).mean()
     clean_df['OBV_Trend'] = clean_df['OBV'] > clean_df['OBV_MA']
-    
-    # ATR (volatilite)
-    clean_df['ATR'] = atr
-    clean_df['ATR_Ratio'] = clean_df['ATR'] / clean_df['Close'] * 100
     
     return clean_df
 
 def score_stock(r):
     s = 0
-    
-    # RSI (ideal: 30-55)
     rs = r['RSI']
     if 30 <= rs <= 40: s += 30
     elif 40 < rs <= 50: s += 25
@@ -325,7 +309,6 @@ def score_stock(r):
     elif 25 <= rs < 30: s += 15
     else: s += 5
     
-    # ADX (düşük = başlangıç)
     ad = r['ADX']
     if ad < 15: s += 30
     elif 15 <= ad < 20: s += 25
@@ -333,7 +316,6 @@ def score_stock(r):
     elif 25 <= ad < 30: s += 15
     else: s += 5
     
-    # Hacim
     vl = r['VolRatio']
     if vl > 2.5: s += 25
     elif vl > 1.8: s += 22
@@ -343,7 +325,6 @@ def score_stock(r):
     elif vl > 0.6: s += 5
     else: s += 2
     
-    # MFI
     mf = r['MFI']
     if 40 <= mf <= 55: s += 15
     elif 35 <= mf <= 60: s += 12
@@ -351,78 +332,46 @@ def score_stock(r):
     elif 25 <= mf <= 68: s += 5
     else: s += 2
     
-    # MACD Histogram
-    macd_hist = r.get('MACD_Hist', 0)
-    macd_prev = r.get('MACD_Hist_Prev', 0)
-    if macd_hist > macd_prev and macd_prev < 0:  # Dönüş sinyali
-        s += 10
-    elif macd_hist > macd_prev:
-        s += 5
-    elif macd_hist > -0.1:  # Hafif negatif kabul edilebilir
-        s += 3
-    
-    # Bollinger pozisyonu
     bb_pos = r.get('BB_Position', 0.5)
-    if 0.0 <= bb_pos <= 0.2:  # Alt banda çok yakın (dip)
-        s += 12
-    elif 0.2 < bb_pos <= 0.4:  # Alt bölge
-        s += 8
-    elif 0.4 < bb_pos <= 0.6:  # Orta bant
-        s += 5
-    elif 0.6 < bb_pos <= 0.7:  # Üst bölge başlangıcı
-        s += 3
+    if 0.0 <= bb_pos <= 0.2: s += 12
+    elif 0.2 < bb_pos <= 0.4: s += 8
+    elif 0.4 < bb_pos <= 0.6: s += 5
     
-    # OBV trend
-    if r.get('OBV_Trend', False):
-        s += 5
+    if r.get('OBV_Trend', False): s += 5
     
-    # MA200 mesafesi bonusu
     ma200_dist = r.get('MA200_Mesafe%', 0)
-    if -10 <= ma200_dist <= 5:  # MA200 civarında
-        s += 8
-    elif 5 < ma200_dist <= 15:  # Hafif üzerinde
-        s += 5
+    if -10 <= ma200_dist <= 5: s += 8
+    elif 5 < ma200_dist <= 15: s += 5
     
     return min(s, 100)
 
 def check_signal(df, i, strategy, filters):
     try:
-        # RSI
         rsi = df['RSI'].iloc[i]
         if pd.isna(rsi) or rsi > strategy['RSI_max'] or rsi < strategy['RSI_min']:
             return False
         
-        # MA200
         if pd.isna(df['MA200'].iloc[i]):
             return False
         ma200_diff = ((df['Close'].iloc[i] - df['MA200'].iloc[i]) / df['MA200'].iloc[i]) * 100
         if ma200_diff < strategy['MA200_diff_min'] or ma200_diff > strategy['MA200_diff_max']:
             return False
         
-        # Stochastic
         stoch = df['Stochastic'].iloc[i]
         if pd.isna(stoch) or stoch > strategy['Stochastic_max']:
             return False
         
-        # ADX
         adx = df['ADX'].iloc[i]
         if pd.isna(adx) or adx < strategy['ADX_min']:
             return False
         
-        # VolRatio
         vol = df['VolRatio'].iloc[i]
         if pd.isna(vol) or vol < strategy['Volume_MA_ratio']:
             return False
         
-        # MFI
         mfi = df['MFI'].iloc[i]
         if pd.isna(mfi) or mfi > strategy['MFI_max']:
             return False
-        
-        # MACD Histogram
-        if strategy.get('MACD_Hist_Up', False):
-            if pd.isna(df['MACD_Hist_Up'].iloc[i]) or not df['MACD_Hist_Up'].iloc[i]:
-                return False
         
         return True
     except:
@@ -451,11 +400,7 @@ def scan_stock(sym, date_str, strategy, filters):
             'VolRatio': round(df['VolRatio'].iloc[idx], 2),
             'MFI': round(df['MFI'].iloc[idx], 1),
             'Stochastic': round(df['Stochastic'].iloc[idx], 1),
-            'MACD_Hist': round(df['MACD_Hist'].iloc[idx], 4),
-            'MACD_Hist_Prev': round(df['MACD_Hist'].iloc[idx-1], 4) if idx > 0 else 0,
             'BB_Position': round(df['BB_Position'].iloc[idx], 2),
-            'OBV_Trend': bool(df['OBV_Trend'].iloc[idx]) if pd.notna(df['OBV_Trend'].iloc[idx]) else False,
-            'ATR_Ratio': round(df['ATR_Ratio'].iloc[idx], 2),
         }
         
         if pd.notna(df['MA200'].iloc[idx]):
@@ -467,14 +412,11 @@ def scan_stock(sym, date_str, strategy, filters):
             if idx+s < len(df):
                 r[f'+{s}G_Getiri%'] = round(((df['Close'].iloc[idx+s] - cur) / cur) * 100, 2)
         
-        # Filtreler
         if r['RSI'] > filters['Max_RSI']: return None
         if r['ADX'] > filters['Max_ADX']: return None
         if r['VolRatio'] < filters['Min_Volume_MA']: return None
         if r['MFI'] > filters['Max_MFI']: return None
         if r['Perf_Skor'] < filters['Min_Perf_Score']: return None
-        if r.get('MACD_Hist', -1) < filters.get('Min_MACD_Hist', -0.5): return None
-        if r.get('BB_Position', 1) > filters.get('Max_BB_Position', 1): return None
         
         return r
     except:
@@ -507,9 +449,7 @@ def main():
     if not check_password():
         return
     
-    # Session state
     defaults = {
-        "debug_mode": False,
         "strategy_preset": "Dengeli (Önerilen)",
         "df": None,
         "ok": False,
@@ -520,16 +460,13 @@ def main():
         if k not in st.session_state:
             st.session_state[k] = v
     
-    c1, c2, c3, c4 = st.columns([6,1,1,1])
+    c1, c2, c3 = st.columns([7,1,1])
     with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO v2</div>', unsafe_allow_html=True)
     with c2:
-        if st.button("🐛 Debug", use_container_width=True):
-            st.session_state.debug_mode = not st.session_state.debug_mode
-    with c3:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
             st.rerun()
-    with c4:
+    with c3:
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
             st.session_state.clear()
             st.rerun()
@@ -537,7 +474,6 @@ def main():
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
         
-        # Strateji preset
         preset = st.selectbox("🎯 Strateji Profili", list(STRATEGY_PRESETS.keys()), 
                              index=list(STRATEGY_PRESETS.keys()).index(st.session_state.strategy_preset))
         st.session_state.strategy_preset = preset
@@ -553,7 +489,6 @@ def main():
         
         st.markdown("---")
         
-        # Liste seçimi
         lists = get_lists()
         secim = st.selectbox("Liste", list(lists.keys()))
         symbols = lists[secim]
@@ -582,28 +517,8 @@ def main():
         days = len(bdays)
         
         st.markdown("---")
-        st.markdown(f"📊 **{days}** işlem günü")
-        st.markdown(f"📋 **{len(symbols)}** hisse")
+        st.markdown(f"📊 **{days}** işlem günü | 📋 **{len(symbols)}** hisse")
         st.markdown(f"⏱️ ~**{days*len(symbols)*0.08/WORKERS:.0f}s**")
-        
-        # Strateji özeti
-        with st.expander("📋 Strateji Özeti"):
-            st.markdown(f"""
-            **Sinyal Koşulları:**
-            - RSI: {strategy['RSI_min']}-{strategy['RSI_max']}
-            - MA200 Mesafe: %{strategy['MA200_diff_min']} / %{strategy['MA200_diff_max']}
-            - Stochastic < {strategy['Stochastic_max']}
-            - ADX > {strategy['ADX_min']}
-            - Hacim > {strategy['Volume_MA_ratio']}x
-            - MFI < {strategy['MFI_max']}
-            
-            **Filtreler:**
-            - Skor > {filters['Min_Perf_Score']}
-            - RSI < {filters['Max_RSI']}
-            - ADX < {filters['Max_ADX']}
-            - Hacim > {filters['Min_Volume_MA']}x
-            - MFI < {filters['Max_MFI']}
-            """)
         
         btn = st.button("🔍 TARAMA BAŞLAT", use_container_width=True, type="primary")
     
@@ -640,7 +555,6 @@ def main():
     if st.session_state.get('ok'):
         df = st.session_state.df
         
-        # Başlık ve özet
         st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün")
         
         # Metrikler
@@ -662,25 +576,9 @@ def main():
         with c5:
             st.metric("Profil", st.session_state.strategy_preset.split()[0])
         
-        # Getiri renklendirme fonksiyonu
-        def color_returns(val):
-            if pd.isna(val): return ''
-            color = 'green' if val > 0 else 'red'
-            return f'color: {color}; font-weight: bold'
-        
-        # Tablo
-        display_cols = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 
-                       'VolRatio', 'MFI', 'Stochastic', 'MA200_Mesafe%', 'BB_Position']
-        for s in STEPS:
-            col_name = f'+{s}G_Getiri%'
-            if col_name in df.columns:
-                display_cols.append(col_name)
-        
-        st.dataframe(
-            df[display_cols].style.applymap(color_returns, subset=[c for c in display_cols if 'Getiri' in c]),
-            use_container_width=True, 
-            height=500
-        )
+        # Tüm sinyaller tablosu - BASİT GÖSTERİM
+        st.markdown("### 📋 Tüm Sinyaller")
+        st.dataframe(df, use_container_width=True, height=500)
         
         # Getiri analizi
         if '+30G_Getiri%' in df.columns:
@@ -731,35 +629,32 @@ def main():
                     | Risk/Getiri | {returns_30.mean()/returns_30.std():.2f} |
                     """)
         
-        # En iyi sinyaller
+        # En iyi 10
         st.markdown("### 🏆 En İyi 10 Sinyal")
-        top10 = df.head(10)[['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', '+5G_Getiri%', '+15G_Getiri%', '+30G_Getiri%']]
+        top10 = df.head(10)
         st.dataframe(top10, use_container_width=True)
         
         # Export
         st.markdown("### 💾 Dışa Aktar")
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 CSV", df.to_csv(index=False), f"sinyaller_{preset.lower().split()[0]}.csv", "text/csv")
+            st.download_button("📊 CSV İndir", df.to_csv(index=False), f"sinyaller_{preset.split()[0].lower()}.csv", "text/csv")
         with c2:
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📑 Excel", buf.getvalue(), f"sinyaller_{preset.lower().split()[0]}.xlsx",
+            st.download_button("📑 Excel İndir", buf.getvalue(), f"sinyaller_{preset.split()[0].lower()}.xlsx",
                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        with c3:
-            if st.button("📋 Panoya Kopyala"):
-                st.info("Tabloyu seçip Ctrl+C ile kopyalayabilirsiniz")
     
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown("""
-        **Yeni Özellikler:**
-        - 🎯 3 farklı strateji profili (Dengeli / Agresif / Muhafazakar)
-        - 📊 Gelişmiş performans analizi
-        - 📈 Getiri histogramı
-        - 🔍 MACD, Bollinger, OBV filtreleri
-        - 📅 Geniş tarih aralığı tarama
+        **Özellikler:**
+        - 🎯 3 strateji profili (Dengeli / Agresif / Muhafazakar)
+        - 📅 Tarih aralığı tarama
+        - 📊 Performans analizi ve getiri histogramı
+        - 📋 Tam sinyal dökümü
+        - 💾 CSV/Excel export
         
         **Başlamak için** sidebar'dan ayarları yapıp **TARAMA BAŞLAT** butonuna tıklayın.
         """)
