@@ -102,45 +102,80 @@ st.markdown("""<style>
     .header { font-size:1.8rem; font-weight:700; text-align:center; padding:1rem;
               background:linear-gradient(135deg,#667eea,#764ba2); color:white;
               border-radius:15px; margin-bottom:1.5rem; }
+    .highlight { background:#d4edda; padding:2px 8px; border-radius:4px; }
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER =====================
 LOOKBACK, STEPS, WORKERS = 200, [5,10,15,30,60,90], 10
 
-DEFAULT_STRATEGY = {
-    'RSI_max': 65,
-    'RSI_min': 25,
-    'MA200_diff_min': -30,
-    'MA200_diff_max': 20,
-    'Stochastic_max': 80,
-    'ADX_min': 3,
-    'Volume_MA_ratio': 0.5,
-    'MFI_max': 70,
-    'MACD_Hist_Up': False,
-}
-
-DEFAULT_FILTERS = {
-    'Min_Perf_Score': 55,
-    'Max_RSI': 62,
-    'Max_ADX': 45,
-    'Min_Volume_MA': 0.6,
-    'Max_MFI': 68,
-    'Min_MACD_Hist': -0.1,
-    'Max_BB_Position': 0.7,
-}
-
+# 4 STRATEJİ PROFİLİ - Kazanan sinyallerin min-max değerlerine göre optimize edildi
 STRATEGY_PRESETS = {
+    "🔬 Kazanan Optimize": {
+        'strategy': {
+            # Tam olarak kazanan sinyallerin min-max değerleri
+            'RSI_max': 61,           # Veride max 61.2
+            'RSI_min': 32,           # Veride min 31.8
+            'MA200_diff_min': -25,   
+            'MA200_diff_max': 20,
+            'Stochastic_max': 74,    # Veride max 74.4
+            'Stochastic_min': 0,     # Veride min 0
+            'ADX_min': 11,           # Veride min 10.9
+            'ADX_max': 41,           # Veride max 41.5 (YENİ: üst sınır)
+            'Volume_MA_ratio': 0.6,  # Veride min 0.6
+            'MFI_max': 65,           # Veride max 65
+            'MFI_min': 37,           # Veride min 36.5 (YENİ: alt sınır)
+            'BB_Position_min': 0.05, # Veride min 0.05 (YENİ)
+            'BB_Position_max': 0.7,  # Veride max 0.7 (YENİ)
+        },
+        'filters': {
+            'Min_Perf_Score': 60,
+            'Max_RSI': 61,
+            'Min_RSI': 32,
+            'Max_ADX': 41,
+            'Min_ADX': 11,
+            'Min_Volume_MA': 0.6,
+            'Max_MFI': 65,
+            'Min_MFI': 37,
+            'Max_BB_Position': 0.7,
+            'Min_BB_Position': 0.05,
+        },
+        'desc': '🔬 **Kazanan sinyallerin birebir min-max değerleri.** En yüksek başarı oranı hedeflenir.'
+    },
     "Dengeli (Önerilen)": {
-        'strategy': DEFAULT_STRATEGY.copy(),
-        'filters': DEFAULT_FILTERS.copy()
+        'strategy': {
+            'RSI_max': 65, 'RSI_min': 25, 'MA200_diff_min': -30, 'MA200_diff_max': 20,
+            'Stochastic_max': 80, 'Stochastic_min': 0, 'ADX_min': 3, 'ADX_max': 45,
+            'Volume_MA_ratio': 0.5, 'MFI_max': 70, 'MFI_min': 25,
+        },
+        'filters': {
+            'Min_Perf_Score': 55, 'Max_RSI': 62, 'Max_ADX': 45,
+            'Min_Volume_MA': 0.6, 'Max_MFI': 68,
+        },
+        'desc': '📊 Orta seviye filtreler, dengeli sinyal sayısı ve kalite.'
     },
     "Agresif (Çok Sinyal)": {
-        'strategy': {**DEFAULT_STRATEGY, 'RSI_max': 70, 'MA200_diff_max': 30, 'Volume_MA_ratio': 0.3},
-        'filters': {**DEFAULT_FILTERS, 'Min_Perf_Score': 45, 'Max_RSI': 65, 'Min_Volume_MA': 0.4, 'Max_MFI': 72}
+        'strategy': {
+            'RSI_max': 70, 'RSI_min': 20, 'MA200_diff_min': -35, 'MA200_diff_max': 30,
+            'Stochastic_max': 85, 'Stochastic_min': 0, 'ADX_min': 3, 'ADX_max': 50,
+            'Volume_MA_ratio': 0.3, 'MFI_max': 75, 'MFI_min': 20,
+        },
+        'filters': {
+            'Min_Perf_Score': 45, 'Max_RSI': 65, 'Max_ADX': 50,
+            'Min_Volume_MA': 0.4, 'Max_MFI': 72,
+        },
+        'desc': '🚀 Gevşek filtreler, daha fazla sinyal. Risk yüksek.'
     },
     "Muhafazakar (Az Sinyal)": {
-        'strategy': {**DEFAULT_STRATEGY, 'RSI_max': 60, 'MA200_diff_max': 10, 'Volume_MA_ratio': 0.8},
-        'filters': {**DEFAULT_FILTERS, 'Min_Perf_Score': 70, 'Max_RSI': 55, 'Min_Volume_MA': 1.0, 'Max_MFI': 60}
+        'strategy': {
+            'RSI_max': 60, 'RSI_min': 30, 'MA200_diff_min': -20, 'MA200_diff_max': 10,
+            'Stochastic_max': 70, 'Stochastic_min': 0, 'ADX_min': 5, 'ADX_max': 35,
+            'Volume_MA_ratio': 0.8, 'MFI_max': 60, 'MFI_min': 30,
+        },
+        'filters': {
+            'Min_Perf_Score': 70, 'Max_RSI': 55, 'Max_ADX': 35,
+            'Min_Volume_MA': 1.0, 'Max_MFI': 60,
+        },
+        'desc': '🛡️ Sıkı filtreler, sadece en kaliteli sinyaller. Az ama öz.'
     }
 }
 
@@ -211,10 +246,8 @@ def get_data(symbol, date_str):
             remaining = [c for c in df.columns if c != 'Date']
             if len(remaining) >= 4:
                 col_map = {
-                    remaining[0]: 'Open',
-                    remaining[1]: 'High',
-                    remaining[2]: 'Low',
-                    remaining[3]: 'Close'
+                    remaining[0]: 'Open', remaining[1]: 'High',
+                    remaining[2]: 'Low', remaining[3]: 'Close'
                 }
                 if len(remaining) >= 5:
                     col_map[remaining[4]] = 'Volume'
@@ -280,41 +313,30 @@ def calc_indicators(df):
     nf = mf.where(tp<tp.shift(),0).rolling(14).sum()
     clean_df['MFI'] = 100-(100/(1+pf/nf))
     
-    ema12 = clean_df['Close'].ewm(span=12).mean()
-    ema26 = clean_df['Close'].ewm(span=26).mean()
-    clean_df['MACD'] = ema12 - ema26
-    clean_df['MACD_Signal'] = clean_df['MACD'].ewm(span=9).mean()
-    clean_df['MACD_Hist'] = clean_df['MACD'] - clean_df['MACD_Signal']
-    clean_df['MACD_Hist_Up'] = clean_df['MACD_Hist'] > clean_df['MACD_Hist'].shift(1)
-    
     clean_df['BB_Mid'] = clean_df['Close'].rolling(20).mean()
     clean_df['BB_Std'] = clean_df['Close'].rolling(20).std()
     clean_df['BB_Upper'] = clean_df['BB_Mid'] + 2 * clean_df['BB_Std']
     clean_df['BB_Lower'] = clean_df['BB_Mid'] - 2 * clean_df['BB_Std']
     clean_df['BB_Position'] = (clean_df['Close'] - clean_df['BB_Lower']) / (clean_df['BB_Upper'] - clean_df['BB_Lower'])
     
-    clean_df['OBV'] = (np.sign(clean_df['Close'].diff()) * clean_df['Volume']).cumsum()
-    clean_df['OBV_MA'] = clean_df['OBV'].rolling(20).mean()
-    clean_df['OBV_Trend'] = clean_df['OBV'] > clean_df['OBV_MA']
-    
     return clean_df
 
 def score_stock(r):
     s = 0
     rs = r['RSI']
-    if 30 <= rs <= 40: s += 30
-    elif 40 < rs <= 50: s += 25
-    elif 50 < rs <= 55: s += 20
-    elif 55 < rs <= 60: s += 15
-    elif 25 <= rs < 30: s += 15
+    if 32 <= rs <= 40: s += 30      # Kazananlar min 32
+    elif 40 < rs <= 50: s += 28
+    elif 50 < rs <= 55: s += 22
+    elif 55 < rs <= 61: s += 15     # Kazananlar max 61
     else: s += 5
     
     ad = r['ADX']
-    if ad < 15: s += 30
-    elif 15 <= ad < 20: s += 25
-    elif 20 <= ad < 25: s += 20
-    elif 25 <= ad < 30: s += 15
-    else: s += 5
+    if 11 <= ad < 15: s += 30       # Kazananlar min 11
+    elif 15 <= ad < 20: s += 28
+    elif 20 <= ad < 25: s += 22
+    elif 25 <= ad < 35: s += 15
+    elif 35 <= ad <= 41: s += 10    # Kazananlar max 41
+    else: s += 3
     
     vl = r['VolRatio']
     if vl > 2.5: s += 25
@@ -322,26 +344,20 @@ def score_stock(r):
     elif vl > 1.2: s += 18
     elif vl > 1.0: s += 12
     elif vl > 0.8: s += 8
-    elif vl > 0.6: s += 5
+    elif vl >= 0.6: s += 6          # Kazananlar min 0.6
     else: s += 2
     
     mf = r['MFI']
     if 40 <= mf <= 55: s += 15
-    elif 35 <= mf <= 60: s += 12
-    elif 30 <= mf <= 65: s += 8
-    elif 25 <= mf <= 68: s += 5
+    elif 37 <= mf <= 60: s += 12    # Kazananlar min 37
+    elif 30 <= mf <= 65: s += 8     # Kazananlar max 65
     else: s += 2
     
     bb_pos = r.get('BB_Position', 0.5)
-    if 0.0 <= bb_pos <= 0.2: s += 12
-    elif 0.2 < bb_pos <= 0.4: s += 8
-    elif 0.4 < bb_pos <= 0.6: s += 5
-    
-    if r.get('OBV_Trend', False): s += 5
-    
-    ma200_dist = r.get('MA200_Mesafe%', 0)
-    if -10 <= ma200_dist <= 5: s += 8
-    elif 5 < ma200_dist <= 15: s += 5
+    if 0.05 <= bb_pos <= 0.2: s += 12    # Kazananlar min 0.05
+    elif 0.2 < bb_pos <= 0.4: s += 10
+    elif 0.4 < bb_pos <= 0.6: s += 6
+    elif 0.6 < bb_pos <= 0.7: s += 3     # Kazananlar max 0.7
     
     return min(s, 100)
 
@@ -358,11 +374,13 @@ def check_signal(df, i, strategy, filters):
             return False
         
         stoch = df['Stochastic'].iloc[i]
-        if pd.isna(stoch) or stoch > strategy['Stochastic_max']:
+        stoch_min = strategy.get('Stochastic_min', 0)
+        if pd.isna(stoch) or stoch > strategy['Stochastic_max'] or stoch < stoch_min:
             return False
         
         adx = df['ADX'].iloc[i]
-        if pd.isna(adx) or adx < strategy['ADX_min']:
+        adx_max = strategy.get('ADX_max', 100)
+        if pd.isna(adx) or adx < strategy['ADX_min'] or adx > adx_max:
             return False
         
         vol = df['VolRatio'].iloc[i]
@@ -370,8 +388,17 @@ def check_signal(df, i, strategy, filters):
             return False
         
         mfi = df['MFI'].iloc[i]
-        if pd.isna(mfi) or mfi > strategy['MFI_max']:
+        mfi_min = strategy.get('MFI_min', 0)
+        if pd.isna(mfi) or mfi > strategy['MFI_max'] or mfi < mfi_min:
             return False
+        
+        # BB Position kontrolü (YENİ)
+        if 'BB_Position_min' in strategy or 'BB_Position_max' in strategy:
+            bb_pos = df['BB_Position'].iloc[i]
+            bb_min = strategy.get('BB_Position_min', -99)
+            bb_max = strategy.get('BB_Position_max', 99)
+            if pd.notna(bb_pos) and (bb_pos < bb_min or bb_pos > bb_max):
+                return False
         
         return True
     except:
@@ -412,11 +439,17 @@ def scan_stock(sym, date_str, strategy, filters):
             if idx+s < len(df):
                 r[f'+{s}G_Getiri%'] = round(((df['Close'].iloc[idx+s] - cur) / cur) * 100, 2)
         
-        if r['RSI'] > filters['Max_RSI']: return None
-        if r['ADX'] > filters['Max_ADX']: return None
-        if r['VolRatio'] < filters['Min_Volume_MA']: return None
-        if r['MFI'] > filters['Max_MFI']: return None
-        if r['Perf_Skor'] < filters['Min_Perf_Score']: return None
+        # Filtre kontrolleri
+        if 'Max_RSI' in filters and r['RSI'] > filters['Max_RSI']: return None
+        if 'Min_RSI' in filters and r['RSI'] < filters['Min_RSI']: return None
+        if 'Max_ADX' in filters and r['ADX'] > filters['Max_ADX']: return None
+        if 'Min_ADX' in filters and r['ADX'] < filters['Min_ADX']: return None
+        if r['VolRatio'] < filters.get('Min_Volume_MA', 0): return None
+        if 'Max_MFI' in filters and r['MFI'] > filters['Max_MFI']: return None
+        if 'Min_MFI' in filters and r['MFI'] < filters['Min_MFI']: return None
+        if 'Max_BB_Position' in filters and r.get('BB_Position', 0) > filters['Max_BB_Position']: return None
+        if 'Min_BB_Position' in filters and r.get('BB_Position', 1) < filters['Min_BB_Position']: return None
+        if r['Perf_Skor'] < filters.get('Min_Perf_Score', 0): return None
         
         return r
     except:
@@ -450,18 +483,15 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "Dengeli (Önerilen)",
-        "df": None,
-        "ok": False,
-        "t": 0,
-        "days": 0
+        "strategy_preset": "🔬 Kazanan Optimize",
+        "df": None, "ok": False, "t": 0, "days": 0
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO v2</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO v4</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -481,11 +511,22 @@ def main():
         strategy = STRATEGY_PRESETS[preset]['strategy']
         filters = STRATEGY_PRESETS[preset]['filters']
         
-        st.caption({
-            "Dengeli (Önerilen)": "📊 Orta seviye filtreler, dengeli sinyal sayısı",
-            "Agresif (Çok Sinyal)": "🚀 Gevşek filtreler, daha fazla sinyal",
-            "Muhafazakar (Az Sinyal)": "🛡️ Sıkı filtreler, yüksek kaliteli sinyaller"
-        }[preset])
+        st.caption(STRATEGY_PRESETS[preset]['desc'])
+        
+        # Strateji özeti
+        with st.expander("📋 Strateji Detayı"):
+            st.markdown(f"""
+            **Sinyal Koşulları (Kazanan Aralığı):**
+            - RSI: **{strategy['RSI_min']}-{strategy['RSI_max']}**
+            - ADX: **{strategy['ADX_min']}-{strategy.get('ADX_max', '∞')}**
+            - Stochastic: **{strategy.get('Stochastic_min', 0)}-{strategy['Stochastic_max']}**
+            - VolRatio > **{strategy['Volume_MA_ratio']}x**
+            - MFI: **{strategy.get('MFI_min', 0)}-{strategy['MFI_max']}**
+            - BB Position: **{strategy.get('BB_Position_min', '-∞')}-{strategy.get('BB_Position_max', '∞')}**
+            
+            **Filtreler:**
+            - Skor > {filters['Min_Perf_Score']}
+            """)
         
         st.markdown("---")
         
@@ -549,13 +590,13 @@ def main():
             st.session_state.t = time.time() - t0
             st.session_state.days = days
         else:
-            st.warning("⚠️ Sinyal bulunamadı! Filtreleri gevşetmeyi deneyin (Agresif profil)")
+            st.warning("⚠️ Sinyal bulunamadı!")
             st.session_state.ok = False
     
     if st.session_state.get('ok'):
         df = st.session_state.df
         
-        st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün")
+        st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün | {preset}")
         
         # Metrikler
         c1, c2, c3, c4, c5 = st.columns(5)
@@ -574,12 +615,12 @@ def main():
             else:
                 st.metric("30G Kazanma", "N/A")
         with c5:
-            st.metric("Profil", st.session_state.strategy_preset.split()[0])
+            st.metric("Profil", preset.split()[0])
         
         # === SEKMELİ GÖSTERİM ===
         st.markdown("### 📈 Backtest Sonuçları")
         
-        tab1, tab2, tab3, tab4 = st.tabs(["📋 Tüm Sinyaller", "🏆 En İyiler", "📊 Getiri Analizi", "🔍 Filtre Etkisi"])
+        tab1, tab2, tab3 = st.tabs(["📋 Tüm Sinyaller", "🏆 En İyiler", "📊 Getiri Analizi"])
         
         with tab1:
             st.dataframe(df, use_container_width=True, height=500)
@@ -590,13 +631,13 @@ def main():
             with col1:
                 st.markdown("**En Yüksek 30G Getiri (Top 15)**")
                 top30 = df.dropna(subset=['+30G_Getiri%']).nlargest(15, '+30G_Getiri%')
-                cols30 = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', '+30G_Getiri%']
+                cols30 = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', 'MFI', 'BB_Position', '+30G_Getiri%']
                 st.dataframe(top30[[c for c in cols30 if c in top30.columns]], use_container_width=True)
             
             with col2:
                 st.markdown("**En Yüksek Skor (Top 15)**")
                 top_skor = df.nlargest(15, 'Perf_Skor')
-                cols_skor = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', '+30G_Getiri%']
+                cols_skor = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', 'MFI', 'BB_Position', '+30G_Getiri%']
                 st.dataframe(top_skor[[c for c in cols_skor if c in top_skor.columns]], use_container_width=True)
         
         with tab3:
@@ -609,20 +650,15 @@ def main():
                     with col1:
                         fig = go.Figure()
                         fig.add_trace(go.Histogram(
-                            x=returns_30, 
-                            nbinsx=30, 
-                            marker_color='#667eea',
-                            name='Getiri'
+                            x=returns_30, nbinsx=30, marker_color='#667eea', name='Getiri'
                         ))
                         fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Başabaş")
                         fig.add_vline(x=returns_30.mean(), line_dash="dash", line_color="green", 
                                      annotation_text=f"Ort: %{returns_30.mean():.1f}")
                         fig.update_layout(
                             title="30 Günlük Getiri Dağılımı",
-                            xaxis_title="% Getiri",
-                            yaxis_title="Sinyal Sayısı",
-                            showlegend=False,
-                            height=400
+                            xaxis_title="% Getiri", yaxis_title="Sinyal Sayısı",
+                            showlegend=False, height=400
                         )
                         st.plotly_chart(fig, use_container_width=True)
                     
@@ -646,56 +682,6 @@ def main():
                         | Ort. Kayıp | %{avg_loss:.1f} |
                         | Risk/Getiri | {returns_30.mean()/returns_30.std():.2f} |
                         """)
-                    
-                    # Skor grubuna göre analiz
-                    st.markdown("**Skor Grubuna Göre Performans:**")
-                    df_valid = df.dropna(subset=['+30G_Getiri%']).copy()
-                    df_valid['Skor_Grubu'] = pd.cut(df_valid['Perf_Skor'], 
-                                                    bins=[0,60,70,80,90,100], 
-                                                    labels=['<60', '60-70', '70-80', '80-90', '90-100'])
-                    skor_analiz = df_valid.groupby('Skor_Grubu', observed=False).agg(
-                        Sinyal=('+30G_Getiri%', 'count'),
-                        Ort_Getiri=('+30G_Getiri%', 'mean'),
-                        Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
-                    ).round(1)
-                    st.dataframe(skor_analiz, use_container_width=True)
-        
-        with tab4:
-            st.markdown("**Filtre Bazlı Kazanma Oranları**")
-            
-            df_valid = df.dropna(subset=['+30G_Getiri%']).copy()
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.markdown("**RSI Aralığı**")
-                df_valid['RSI_Grup'] = pd.cut(df_valid['RSI'], bins=[25,35,45,55,65], labels=['25-35','35-45','45-55','55-65'])
-                rsi_analiz = df_valid.groupby('RSI_Grup', observed=False).agg(
-                    Sinyal=('+30G_Getiri%', 'count'),
-                    Ort_Getiri=('+30G_Getiri%', 'mean'),
-                    Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
-                ).round(1)
-                st.dataframe(rsi_analiz, use_container_width=True)
-            
-            with col2:
-                st.markdown("**ADX Aralığı**")
-                df_valid['ADX_Grup'] = pd.cut(df_valid['ADX'], bins=[0,15,25,35,50], labels=['<15','15-25','25-35','>35'])
-                adx_analiz = df_valid.groupby('ADX_Grup', observed=False).agg(
-                    Sinyal=('+30G_Getiri%', 'count'),
-                    Ort_Getiri=('+30G_Getiri%', 'mean'),
-                    Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
-                ).round(1)
-                st.dataframe(adx_analiz, use_container_width=True)
-            
-            with col3:
-                st.markdown("**VolRatio Aralığı**")
-                df_valid['Vol_Grup'] = pd.cut(df_valid['VolRatio'], bins=[0,0.6,0.8,1.0,1.5,10], labels=['<0.6','0.6-0.8','0.8-1.0','1.0-1.5','>1.5'])
-                vol_analiz = df_valid.groupby('Vol_Grup', observed=False).agg(
-                    Sinyal=('+30G_Getiri%', 'count'),
-                    Ort_Getiri=('+30G_Getiri%', 'mean'),
-                    Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
-                ).round(1)
-                st.dataframe(vol_analiz, use_container_width=True)
         
         # Export
         st.markdown("### 💾 Dışa Aktar")
@@ -712,13 +698,17 @@ def main():
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown("""
-        **Özellikler:**
-        - 🎯 3 strateji profili (Dengeli / Agresif / Muhafazakar)
-        - 📅 Tarih aralığı tarama
-        - 📊 Performans analizi ve getiri histogramı
-        - 📋 Tam sinyal dökümü (sekmeli gösterim)
-        - 🔍 Filtre etkisi analizi (RSI/ADX/VolRatio bazında)
-        - 💾 CSV/Excel export
+        **v4 - Kazanan Optimize Strateji:**
+        
+        🔬 **Kazanan sinyallerin birebir min-max değerleri** kullanılarak optimize edildi.
+        
+        **Kazanan Sinyal Aralıkları:**
+        - RSI: 32-61
+        - ADX: 11-41
+        - VolRatio: >0.6
+        - MFI: 37-65
+        - Stochastic: 0-74
+        - BB Position: 0.05-0.7
         
         **Başlamak için** sidebar'dan ayarları yapıp **TARAMA BAŞLAT** butonuna tıklayın.
         """)
