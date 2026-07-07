@@ -107,51 +107,50 @@ st.markdown("""<style>
 # ===================== SABİTLER =====================
 LOOKBACK, STEPS, WORKERS = 200, [5,10,15,30,60,90], 10
 
-# TEMMUZ + AĞUSTOS KAZANAN SİNYALLERİN BİRLEŞİK MİN-MAX DEĞERLERİ
+# TÜM STRATEJİ PROFİLLERİ
 STRATEGY_PRESETS = {
-    "🔬 Süper Optimize (Tem+Ağu)": {
+    "🔬 4 Aylık Nihai (Tem-Ağu-Eyl-Eki)": {
         'strategy': {
-            # Temmuz+Ağustos kazananlarının birleşik min-max değerleri
-            'RSI_max': 52,           # Ağustos max 52.2, Temmuz max 61.2 → DARALTILDI
-            'RSI_min': 37,           # Ağustos min 36.8, Temmuz min 31.8 → YÜKSELTİLDİ
-            'MA200_diff_min': -25,
-            'MA200_diff_max': 20,
-            'Stochastic_max': 66,    # Ağustos max 66.2, Temmuz max 74.4 → DARALTILDI
-            'Stochastic_min': 3,     # Ağustos min 2.9, Temmuz min 0 → YÜKSELTİLDİ
-            'ADX_min': 13,           # Ağustos min 12.8, Temmuz min 10.9 → YÜKSELTİLDİ
-            'ADX_max': 38,           # Ağustos max 38.2, Temmuz max 41.5 → DARALTILDI
-            'Volume_MA_ratio': 0.6,  # Ağustos min 0.61
-            'Volume_MA_max': 1.4,    # YENİ: Ağustos max 1.42
-            'MFI_max': 64,           # Ağustos max 63.6, Temmuz max 65 → DARALTILDI
-            'MFI_min': 45,           # Ağustos min 45.4, Temmuz min 36.5 → YÜKSELTİLDİ
-            'BB_Position_min': 0.07, # Ağustos min 0.07
-            'BB_Position_max': 0.6,  # Ağustos max 0.6
+            # 4 aylık kazanan sinyallerin ortak min-max değerleri
+            'RSI_max': 52, 'RSI_min': 38,
+            'MA200_diff_min': -25, 'MA200_diff_max': 20,
+            'Stochastic_max': 58, 'Stochastic_min': 4,
+            'ADX_min': 14, 'ADX_max': 38,
+            'Volume_MA_ratio': 0.6, 'Volume_MA_max': 1.4,
+            'MFI_max': 61, 'MFI_min': 45,
+            'BB_Position_min': 0.07, 'BB_Position_max': 0.55,
         },
         'filters': {
-            'Min_Perf_Score': 65,
-            'Max_RSI': 52, 'Min_RSI': 37,
-            'Max_ADX': 38, 'Min_ADX': 13,
+            'Min_Perf_Score': 80,
+            'Max_RSI': 52, 'Min_RSI': 38,
+            'Max_ADX': 38, 'Min_ADX': 14,
             'Min_Volume_MA': 0.6, 'Max_Volume_MA': 1.4,
-            'Max_MFI': 64, 'Min_MFI': 45,
-            'Max_BB_Position': 0.6, 'Min_BB_Position': 0.07,
+            'Max_MFI': 61, 'Min_MFI': 45,
+            'Max_BB_Position': 0.55, 'Min_BB_Position': 0.07,
         },
-        'desc': '🔬 **Temmuz+Ağustos kazanan sinyallerinin birleşik min-max değerleri.** İki ayda da çalışan ortak aralıklar.'
+        'desc': '🔬 **4 aylık (Tem-Ağu-Eyl-Eki) kazanan sinyallerin ortak aralıkları.** En güvenilir strateji. 5G-10G-15G-30G pozitif.'
     },
-    "🔬 Kazanan Optimize (Temmuz)": {
+    "🔬 3 Aylık (Tem-Ağu-Eyl)": {
         'strategy': {
-            'RSI_max': 61, 'RSI_min': 32, 'MA200_diff_min': -25, 'MA200_diff_max': 20,
-            'Stochastic_max': 74, 'Stochastic_min': 0, 'ADX_min': 11, 'ADX_max': 41,
-            'Volume_MA_ratio': 0.6, 'MFI_max': 65, 'MFI_min': 37,
-            'BB_Position_min': 0.05, 'BB_Position_max': 0.7,
+            'RSI_max': 52, 'RSI_min': 37,
+            'MA200_diff_min': -25, 'MA200_diff_max': 20,
+            'Stochastic_max': 58, 'Stochastic_min': 5,
+            'ADX_min': 16, 'ADX_max': 38,
+            'Volume_MA_ratio': 0.6, 'Volume_MA_max': 1.35,
+            'MFI_max': 63, 'MFI_min': 45,
+            'BB_Position_min': 0.07, 'BB_Position_max': 0.55,
         },
         'filters': {
-            'Min_Perf_Score': 60, 'Max_RSI': 61, 'Min_RSI': 32,
-            'Max_ADX': 41, 'Min_ADX': 11, 'Min_Volume_MA': 0.6,
-            'Max_MFI': 65, 'Min_MFI': 37, 'Max_BB_Position': 0.7, 'Min_BB_Position': 0.05,
+            'Min_Perf_Score': 85,
+            'Max_RSI': 52, 'Min_RSI': 37,
+            'Max_ADX': 38, 'Min_ADX': 16,
+            'Min_Volume_MA': 0.6, 'Max_Volume_MA': 1.35,
+            'Max_MFI': 63, 'Min_MFI': 45,
+            'Max_BB_Position': 0.55, 'Min_BB_Position': 0.07,
         },
-        'desc': '🔬 Temmuz ayı kazanan sinyallerinden optimize edildi.'
+        'desc': '🔬 Tem+Ağu+Eyl 15G&30G pozitif sinyallerin ortak aralıkları.'
     },
-    "Dengeli (Önerilen)": {
+    "📊 Dengeli (Önerilen)": {
         'strategy': {
             'RSI_max': 65, 'RSI_min': 25, 'MA200_diff_min': -30, 'MA200_diff_max': 20,
             'Stochastic_max': 80, 'Stochastic_min': 0, 'ADX_min': 3, 'ADX_max': 45,
@@ -163,7 +162,7 @@ STRATEGY_PRESETS = {
         },
         'desc': '📊 Orta seviye filtreler, dengeli sinyal sayısı ve kalite.'
     },
-    "Agresif (Çok Sinyal)": {
+    "🚀 Agresif (Çok Sinyal)": {
         'strategy': {
             'RSI_max': 70, 'RSI_min': 20, 'MA200_diff_min': -35, 'MA200_diff_max': 30,
             'Stochastic_max': 85, 'Stochastic_min': 0, 'ADX_min': 3, 'ADX_max': 50,
@@ -322,39 +321,37 @@ def calc_indicators(df):
 def score_stock(r):
     s = 0
     rs = r['RSI']
-    # Süper Optimize aralığı: 37-52
-    if 37 <= rs <= 42: s += 30
-    elif 42 < rs <= 48: s += 28
-    elif 48 < rs <= 52: s += 22
-    elif 32 <= rs < 37: s += 15
-    else: s += 5
+    # 4 aylık ideal aralık: 38-52
+    if 42 <= rs <= 48: s += 30
+    elif 38 <= rs <= 52: s += 22
+    elif 35 <= rs <= 55: s += 12
+    else: s += 3
     
     ad = r['ADX']
-    # Süper Optimize aralığı: 13-38
-    if 13 <= ad < 20: s += 30
-    elif 20 <= ad < 25: s += 28
-    elif 25 <= ad < 30: s += 22
-    elif 30 <= ad <= 38: s += 15
+    # 4 aylık ideal aralık: 14-38
+    if 16 <= ad <= 25: s += 28
+    elif 14 <= ad <= 38: s += 18
     else: s += 5
     
     vl = r['VolRatio']
-    # Süper Optimize aralığı: 0.6-1.4
+    # 4 aylık ideal aralık: 0.6-1.4
     if 0.8 <= vl <= 1.2: s += 25
-    elif 1.2 < vl <= 1.4: s += 20
-    elif 0.6 <= vl < 0.8: s += 18
-    elif vl > 1.4: s += 10
+    elif 0.6 <= vl <= 1.4: s += 15
     else: s += 3
     
     mf = r['MFI']
-    # Süper Optimize aralığı: 45-64
+    # 4 aylık ideal aralık: 45-61
     if 48 <= mf <= 58: s += 18
-    elif 45 <= mf <= 64: s += 12
-    else: s += 3
+    elif 45 <= mf <= 61: s += 10
+    else: s += 2
+    
+    stoch = r.get('Stochastic', 50)
+    if 5 <= stoch <= 30: s += 15
+    elif 30 < stoch <= 58: s += 8
     
     bb_pos = r.get('BB_Position', 0.5)
     if 0.07 <= bb_pos <= 0.3: s += 12
-    elif 0.3 < bb_pos <= 0.5: s += 8
-    elif 0.5 < bb_pos <= 0.6: s += 5
+    elif 0.3 < bb_pos <= 0.55: s += 6
     
     return min(s, 100)
 
@@ -481,7 +478,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "🔬 Süper Optimize (Tem+Ağu)",
+        "strategy_preset": "🔬 4 Aylık Nihai (Tem-Ağu-Eyl-Eki)",
         "df": None, "ok": False, "t": 0, "days": 0
     }
     for k, v in defaults.items():
@@ -489,7 +486,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO v5</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO - 4 Aylık Nihai</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -511,7 +508,6 @@ def main():
         
         st.caption(STRATEGY_PRESETS[preset]['desc'])
         
-        # Strateji özeti
         with st.expander("📋 Strateji Detayı"):
             st.markdown(f"""
             **Sinyal Koşulları:**
@@ -536,18 +532,18 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2025,9,1), "tek")
+            d = turkish_date_picker("Tarih Seçin", datetime(2025,11,1), "tek")
             start = end = d
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
             with c1:
-                start = turkish_date_picker("Başlangıç", datetime(2025,9,1), "bas")
+                start = turkish_date_picker("Başlangıç", datetime(2025,11,1), "bas")
             with c2:
-                end = turkish_date_picker("Bitiş", datetime(2025,9,30), "bit")
+                end = turkish_date_picker("Bitiş", datetime(2025,11,30), "bit")
         else:
             c1, c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020, 2031), index=5, key="yy")
-            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=8, key="mm")
+            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=10, key="mm")
             start = datetime(y, m, 1).date()
             end = (datetime(y, m+1, 1) if m < 12 else datetime(y+1, 1, 1)).date() - timedelta(days=1)
         
@@ -611,11 +607,9 @@ def main():
             else:
                 st.metric("30G Kazanma", "N/A")
         
-        # Tablo
         st.markdown("### 📋 Sinyaller")
         st.dataframe(df, use_container_width=True, height=500)
         
-        # Getiri histogramı
         if '+30G_Getiri%' in df.columns and len(r30) > 0:
             col1, col2 = st.columns(2)
             
@@ -638,35 +632,31 @@ def main():
                 - Risk/Getiri: {r30.mean()/r30.std():.2f}
                 """)
         
-        # Export
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 CSV", df.to_csv(index=False), f"sinyaller_{preset.split()[0].lower()}.csv", "text/csv")
+            st.download_button("📊 CSV", df.to_csv(index=False), f"sinyaller_nihai.csv", "text/csv")
         with c2:
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📑 Excel", buf.getvalue(), f"sinyaller_{preset.split()[0].lower()}.xlsx",
+            st.download_button("📑 Excel", buf.getvalue(), f"sinyaller_nihai.xlsx",
                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown("""
-        **v5 - Süper Optimize Strateji (Temmuz+Ağustos):**
+        **4 Aylık Nihai Strateji (Tem-Ağu-Eyl-Eki):**
         
-        🔬 İki ayda da kazanan sinyallerin **ortak min-max aralıkları:**
+        🔬 4 ayda da **5G-10G-15G-30G pozitif** kazanan sinyallerin ortak aralıkları:
         
         | İndikatör | Aralık |
         |-----------|--------|
-        | RSI | 37-52 |
-        | ADX | 13-38 |
+        | RSI | 38-52 |
+        | ADX | 14-38 |
         | VolRatio | 0.6-1.4x |
-        | MFI | 45-64 |
-        | Stochastic | 3-66 |
-        | BB Position | 0.07-0.6 |
+        | MFI | 45-61 |
+        | Stochastic | 4-58 |
+        | BB Position | 0.07-0.55 |
         
-        Daha az ama daha kaliteli sinyal hedeflenir.
-        """)
-
-if __name__ == "__main__":
-    main()
+        En güvenilir, piyasa koşullarından bağımsız strateji.
+        ""
