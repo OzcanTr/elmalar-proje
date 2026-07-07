@@ -102,44 +102,54 @@ st.markdown("""<style>
     .header { font-size:1.8rem; font-weight:700; text-align:center; padding:1rem;
               background:linear-gradient(135deg,#667eea,#764ba2); color:white;
               border-radius:15px; margin-bottom:1.5rem; }
-    .highlight { background:#d4edda; padding:2px 8px; border-radius:4px; }
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER =====================
 LOOKBACK, STEPS, WORKERS = 200, [5,10,15,30,60,90], 10
 
-# 4 STRATEJİ PROFİLİ - Kazanan sinyallerin min-max değerlerine göre optimize edildi
+# TEMMUZ + AĞUSTOS KAZANAN SİNYALLERİN BİRLEŞİK MİN-MAX DEĞERLERİ
 STRATEGY_PRESETS = {
-    "🔬 Kazanan Optimize": {
+    "🔬 Süper Optimize (Tem+Ağu)": {
         'strategy': {
-            # Tam olarak kazanan sinyallerin min-max değerleri
-            'RSI_max': 61,           # Veride max 61.2
-            'RSI_min': 32,           # Veride min 31.8
-            'MA200_diff_min': -25,   
+            # Temmuz+Ağustos kazananlarının birleşik min-max değerleri
+            'RSI_max': 52,           # Ağustos max 52.2, Temmuz max 61.2 → DARALTILDI
+            'RSI_min': 37,           # Ağustos min 36.8, Temmuz min 31.8 → YÜKSELTİLDİ
+            'MA200_diff_min': -25,
             'MA200_diff_max': 20,
-            'Stochastic_max': 74,    # Veride max 74.4
-            'Stochastic_min': 0,     # Veride min 0
-            'ADX_min': 11,           # Veride min 10.9
-            'ADX_max': 41,           # Veride max 41.5 (YENİ: üst sınır)
-            'Volume_MA_ratio': 0.6,  # Veride min 0.6
-            'MFI_max': 65,           # Veride max 65
-            'MFI_min': 37,           # Veride min 36.5 (YENİ: alt sınır)
-            'BB_Position_min': 0.05, # Veride min 0.05 (YENİ)
-            'BB_Position_max': 0.7,  # Veride max 0.7 (YENİ)
+            'Stochastic_max': 66,    # Ağustos max 66.2, Temmuz max 74.4 → DARALTILDI
+            'Stochastic_min': 3,     # Ağustos min 2.9, Temmuz min 0 → YÜKSELTİLDİ
+            'ADX_min': 13,           # Ağustos min 12.8, Temmuz min 10.9 → YÜKSELTİLDİ
+            'ADX_max': 38,           # Ağustos max 38.2, Temmuz max 41.5 → DARALTILDI
+            'Volume_MA_ratio': 0.6,  # Ağustos min 0.61
+            'Volume_MA_max': 1.4,    # YENİ: Ağustos max 1.42
+            'MFI_max': 64,           # Ağustos max 63.6, Temmuz max 65 → DARALTILDI
+            'MFI_min': 45,           # Ağustos min 45.4, Temmuz min 36.5 → YÜKSELTİLDİ
+            'BB_Position_min': 0.07, # Ağustos min 0.07
+            'BB_Position_max': 0.6,  # Ağustos max 0.6
         },
         'filters': {
-            'Min_Perf_Score': 60,
-            'Max_RSI': 61,
-            'Min_RSI': 32,
-            'Max_ADX': 41,
-            'Min_ADX': 11,
-            'Min_Volume_MA': 0.6,
-            'Max_MFI': 65,
-            'Min_MFI': 37,
-            'Max_BB_Position': 0.7,
-            'Min_BB_Position': 0.05,
+            'Min_Perf_Score': 65,
+            'Max_RSI': 52, 'Min_RSI': 37,
+            'Max_ADX': 38, 'Min_ADX': 13,
+            'Min_Volume_MA': 0.6, 'Max_Volume_MA': 1.4,
+            'Max_MFI': 64, 'Min_MFI': 45,
+            'Max_BB_Position': 0.6, 'Min_BB_Position': 0.07,
         },
-        'desc': '🔬 **Kazanan sinyallerin birebir min-max değerleri.** En yüksek başarı oranı hedeflenir.'
+        'desc': '🔬 **Temmuz+Ağustos kazanan sinyallerinin birleşik min-max değerleri.** İki ayda da çalışan ortak aralıklar.'
+    },
+    "🔬 Kazanan Optimize (Temmuz)": {
+        'strategy': {
+            'RSI_max': 61, 'RSI_min': 32, 'MA200_diff_min': -25, 'MA200_diff_max': 20,
+            'Stochastic_max': 74, 'Stochastic_min': 0, 'ADX_min': 11, 'ADX_max': 41,
+            'Volume_MA_ratio': 0.6, 'MFI_max': 65, 'MFI_min': 37,
+            'BB_Position_min': 0.05, 'BB_Position_max': 0.7,
+        },
+        'filters': {
+            'Min_Perf_Score': 60, 'Max_RSI': 61, 'Min_RSI': 32,
+            'Max_ADX': 41, 'Min_ADX': 11, 'Min_Volume_MA': 0.6,
+            'Max_MFI': 65, 'Min_MFI': 37, 'Max_BB_Position': 0.7, 'Min_BB_Position': 0.05,
+        },
+        'desc': '🔬 Temmuz ayı kazanan sinyallerinden optimize edildi.'
     },
     "Dengeli (Önerilen)": {
         'strategy': {
@@ -165,18 +175,6 @@ STRATEGY_PRESETS = {
         },
         'desc': '🚀 Gevşek filtreler, daha fazla sinyal. Risk yüksek.'
     },
-    "Muhafazakar (Az Sinyal)": {
-        'strategy': {
-            'RSI_max': 60, 'RSI_min': 30, 'MA200_diff_min': -20, 'MA200_diff_max': 10,
-            'Stochastic_max': 70, 'Stochastic_min': 0, 'ADX_min': 5, 'ADX_max': 35,
-            'Volume_MA_ratio': 0.8, 'MFI_max': 60, 'MFI_min': 30,
-        },
-        'filters': {
-            'Min_Perf_Score': 70, 'Max_RSI': 55, 'Max_ADX': 35,
-            'Min_Volume_MA': 1.0, 'Max_MFI': 60,
-        },
-        'desc': '🛡️ Sıkı filtreler, sadece en kaliteli sinyaller. Az ama öz.'
-    }
 }
 
 # ===================== VERİ & GÖSTERGELER =====================
@@ -324,40 +322,39 @@ def calc_indicators(df):
 def score_stock(r):
     s = 0
     rs = r['RSI']
-    if 32 <= rs <= 40: s += 30      # Kazananlar min 32
-    elif 40 < rs <= 50: s += 28
-    elif 50 < rs <= 55: s += 22
-    elif 55 < rs <= 61: s += 15     # Kazananlar max 61
+    # Süper Optimize aralığı: 37-52
+    if 37 <= rs <= 42: s += 30
+    elif 42 < rs <= 48: s += 28
+    elif 48 < rs <= 52: s += 22
+    elif 32 <= rs < 37: s += 15
     else: s += 5
     
     ad = r['ADX']
-    if 11 <= ad < 15: s += 30       # Kazananlar min 11
-    elif 15 <= ad < 20: s += 28
-    elif 20 <= ad < 25: s += 22
-    elif 25 <= ad < 35: s += 15
-    elif 35 <= ad <= 41: s += 10    # Kazananlar max 41
-    else: s += 3
+    # Süper Optimize aralığı: 13-38
+    if 13 <= ad < 20: s += 30
+    elif 20 <= ad < 25: s += 28
+    elif 25 <= ad < 30: s += 22
+    elif 30 <= ad <= 38: s += 15
+    else: s += 5
     
     vl = r['VolRatio']
-    if vl > 2.5: s += 25
-    elif vl > 1.8: s += 22
-    elif vl > 1.2: s += 18
-    elif vl > 1.0: s += 12
-    elif vl > 0.8: s += 8
-    elif vl >= 0.6: s += 6          # Kazananlar min 0.6
-    else: s += 2
+    # Süper Optimize aralığı: 0.6-1.4
+    if 0.8 <= vl <= 1.2: s += 25
+    elif 1.2 < vl <= 1.4: s += 20
+    elif 0.6 <= vl < 0.8: s += 18
+    elif vl > 1.4: s += 10
+    else: s += 3
     
     mf = r['MFI']
-    if 40 <= mf <= 55: s += 15
-    elif 37 <= mf <= 60: s += 12    # Kazananlar min 37
-    elif 30 <= mf <= 65: s += 8     # Kazananlar max 65
-    else: s += 2
+    # Süper Optimize aralığı: 45-64
+    if 48 <= mf <= 58: s += 18
+    elif 45 <= mf <= 64: s += 12
+    else: s += 3
     
     bb_pos = r.get('BB_Position', 0.5)
-    if 0.05 <= bb_pos <= 0.2: s += 12    # Kazananlar min 0.05
-    elif 0.2 < bb_pos <= 0.4: s += 10
-    elif 0.4 < bb_pos <= 0.6: s += 6
-    elif 0.6 < bb_pos <= 0.7: s += 3     # Kazananlar max 0.7
+    if 0.07 <= bb_pos <= 0.3: s += 12
+    elif 0.3 < bb_pos <= 0.5: s += 8
+    elif 0.5 < bb_pos <= 0.6: s += 5
     
     return min(s, 100)
 
@@ -384,7 +381,8 @@ def check_signal(df, i, strategy, filters):
             return False
         
         vol = df['VolRatio'].iloc[i]
-        if pd.isna(vol) or vol < strategy['Volume_MA_ratio']:
+        vol_max = strategy.get('Volume_MA_max', 999)
+        if pd.isna(vol) or vol < strategy['Volume_MA_ratio'] or vol > vol_max:
             return False
         
         mfi = df['MFI'].iloc[i]
@@ -392,7 +390,6 @@ def check_signal(df, i, strategy, filters):
         if pd.isna(mfi) or mfi > strategy['MFI_max'] or mfi < mfi_min:
             return False
         
-        # BB Position kontrolü (YENİ)
         if 'BB_Position_min' in strategy or 'BB_Position_max' in strategy:
             bb_pos = df['BB_Position'].iloc[i]
             bb_min = strategy.get('BB_Position_min', -99)
@@ -439,12 +436,13 @@ def scan_stock(sym, date_str, strategy, filters):
             if idx+s < len(df):
                 r[f'+{s}G_Getiri%'] = round(((df['Close'].iloc[idx+s] - cur) / cur) * 100, 2)
         
-        # Filtre kontrolleri
+        # Filtreler
         if 'Max_RSI' in filters and r['RSI'] > filters['Max_RSI']: return None
         if 'Min_RSI' in filters and r['RSI'] < filters['Min_RSI']: return None
         if 'Max_ADX' in filters and r['ADX'] > filters['Max_ADX']: return None
         if 'Min_ADX' in filters and r['ADX'] < filters['Min_ADX']: return None
         if r['VolRatio'] < filters.get('Min_Volume_MA', 0): return None
+        if 'Max_Volume_MA' in filters and r['VolRatio'] > filters['Max_Volume_MA']: return None
         if 'Max_MFI' in filters and r['MFI'] > filters['Max_MFI']: return None
         if 'Min_MFI' in filters and r['MFI'] < filters['Min_MFI']: return None
         if 'Max_BB_Position' in filters and r.get('BB_Position', 0) > filters['Max_BB_Position']: return None
@@ -483,7 +481,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "🔬 Kazanan Optimize",
+        "strategy_preset": "🔬 Süper Optimize (Tem+Ağu)",
         "df": None, "ok": False, "t": 0, "days": 0
     }
     for k, v in defaults.items():
@@ -491,7 +489,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO v4</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO v5</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -516,16 +514,15 @@ def main():
         # Strateji özeti
         with st.expander("📋 Strateji Detayı"):
             st.markdown(f"""
-            **Sinyal Koşulları (Kazanan Aralığı):**
+            **Sinyal Koşulları:**
             - RSI: **{strategy['RSI_min']}-{strategy['RSI_max']}**
             - ADX: **{strategy['ADX_min']}-{strategy.get('ADX_max', '∞')}**
             - Stochastic: **{strategy.get('Stochastic_min', 0)}-{strategy['Stochastic_max']}**
-            - VolRatio > **{strategy['Volume_MA_ratio']}x**
+            - VolRatio: **{strategy['Volume_MA_ratio']}-{strategy.get('Volume_MA_max', '∞')}x**
             - MFI: **{strategy.get('MFI_min', 0)}-{strategy['MFI_max']}**
             - BB Position: **{strategy.get('BB_Position_min', '-∞')}-{strategy.get('BB_Position_max', '∞')}**
             
-            **Filtreler:**
-            - Skor > {filters['Min_Perf_Score']}
+            **Filtre Skor:** > {filters['Min_Perf_Score']}
             """)
         
         st.markdown("---")
@@ -539,18 +536,18 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2025,7,7), "tek")
+            d = turkish_date_picker("Tarih Seçin", datetime(2025,9,1), "tek")
             start = end = d
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
             with c1:
-                start = turkish_date_picker("Başlangıç", datetime(2025,7,1), "bas")
+                start = turkish_date_picker("Başlangıç", datetime(2025,9,1), "bas")
             with c2:
-                end = turkish_date_picker("Bitiş", datetime(2025,7,31), "bit")
+                end = turkish_date_picker("Bitiş", datetime(2025,9,30), "bit")
         else:
             c1, c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020, 2031), index=5, key="yy")
-            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6, key="mm")
+            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=8, key="mm")
             start = datetime(y, m, 1).date()
             end = (datetime(y, m+1, 1) if m < 12 else datetime(y+1, 1, 1)).date() - timedelta(days=1)
         
@@ -598,8 +595,7 @@ def main():
         
         st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün | {preset}")
         
-        # Metrikler
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
         
         with c1:
             st.metric("Sinyal", len(df))
@@ -614,103 +610,62 @@ def main():
                 st.metric("30G Kazanma", f"%{(r30>0).sum()/len(r30)*100:.0f}")
             else:
                 st.metric("30G Kazanma", "N/A")
-        with c5:
-            st.metric("Profil", preset.split()[0])
         
-        # === SEKMELİ GÖSTERİM ===
-        st.markdown("### 📈 Backtest Sonuçları")
+        # Tablo
+        st.markdown("### 📋 Sinyaller")
+        st.dataframe(df, use_container_width=True, height=500)
         
-        tab1, tab2, tab3 = st.tabs(["📋 Tüm Sinyaller", "🏆 En İyiler", "📊 Getiri Analizi"])
-        
-        with tab1:
-            st.dataframe(df, use_container_width=True, height=500)
-        
-        with tab2:
+        # Getiri histogramı
+        if '+30G_Getiri%' in df.columns and len(r30) > 0:
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("**En Yüksek 30G Getiri (Top 15)**")
-                top30 = df.dropna(subset=['+30G_Getiri%']).nlargest(15, '+30G_Getiri%')
-                cols30 = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', 'MFI', 'BB_Position', '+30G_Getiri%']
-                st.dataframe(top30[[c for c in cols30 if c in top30.columns]], use_container_width=True)
+                fig = go.Figure()
+                fig.add_trace(go.Histogram(x=r30, nbinsx=20, marker_color='#667eea'))
+                fig.add_vline(x=0, line_dash="dash", line_color="red")
+                fig.add_vline(x=r30.mean(), line_dash="dash", line_color="green")
+                fig.update_layout(title="30G Getiri Dağılımı", xaxis_title="% Getiri", yaxis_title="Sinyal", showlegend=False, height=350)
+                st.plotly_chart(fig, use_container_width=True)
             
             with col2:
-                st.markdown("**En Yüksek Skor (Top 15)**")
-                top_skor = df.nlargest(15, 'Perf_Skor')
-                cols_skor = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', 'MFI', 'BB_Position', '+30G_Getiri%']
-                st.dataframe(top_skor[[c for c in cols_skor if c in top_skor.columns]], use_container_width=True)
-        
-        with tab3:
-            if '+30G_Getiri%' in df.columns:
-                returns_30 = df['+30G_Getiri%'].dropna()
-                
-                if len(returns_30) > 0:
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        fig = go.Figure()
-                        fig.add_trace(go.Histogram(
-                            x=returns_30, nbinsx=30, marker_color='#667eea', name='Getiri'
-                        ))
-                        fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Başabaş")
-                        fig.add_vline(x=returns_30.mean(), line_dash="dash", line_color="green", 
-                                     annotation_text=f"Ort: %{returns_30.mean():.1f}")
-                        fig.update_layout(
-                            title="30 Günlük Getiri Dağılımı",
-                            xaxis_title="% Getiri", yaxis_title="Sinyal Sayısı",
-                            showlegend=False, height=400
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    with col2:
-                        win_rate = (returns_30 > 0).sum() / len(returns_30) * 100
-                        avg_win = returns_30[returns_30 > 0].mean() if len(returns_30[returns_30 > 0]) > 0 else 0
-                        avg_loss = returns_30[returns_30 < 0].mean() if len(returns_30[returns_30 < 0]) > 0 else 0
-                        
-                        st.markdown(f"""
-                        **Genel İstatistikler:**
-                        
-                        | Metrik | Değer |
-                        |--------|-------|
-                        | Sinyal Sayısı | {len(returns_30)} |
-                        | Ortalama Getiri | **%{returns_30.mean():.1f}** |
-                        | Medyan Getiri | %{returns_30.median():.1f} |
-                        | Maksimum | %{returns_30.max():.1f} |
-                        | Minimum | %{returns_30.min():.1f} |
-                        | Kazanma Oranı | **%{win_rate:.0f}** |
-                        | Ort. Kazanç | %{avg_win:.1f} |
-                        | Ort. Kayıp | %{avg_loss:.1f} |
-                        | Risk/Getiri | {returns_30.mean()/returns_30.std():.2f} |
-                        """)
+                win_rate = (r30 > 0).sum() / len(r30) * 100
+                st.markdown(f"""
+                **30G İstatistikleri:**
+                - Ortalama: **%{r30.mean():.1f}**
+                - Medyan: %{r30.median():.1f}
+                - Maks: %{r30.max():.1f} | Min: %{r30.min():.1f}
+                - Kazanma: **%{win_rate:.0f}**
+                - Risk/Getiri: {r30.mean()/r30.std():.2f}
+                """)
         
         # Export
-        st.markdown("### 💾 Dışa Aktar")
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 CSV İndir", df.to_csv(index=False), f"sinyaller_{preset.split()[0].lower()}.csv", "text/csv")
+            st.download_button("📊 CSV", df.to_csv(index=False), f"sinyaller_{preset.split()[0].lower()}.csv", "text/csv")
         with c2:
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📑 Excel İndir", buf.getvalue(), f"sinyaller_{preset.split()[0].lower()}.xlsx",
+            st.download_button("📑 Excel", buf.getvalue(), f"sinyaller_{preset.split()[0].lower()}.xlsx",
                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown("""
-        **v4 - Kazanan Optimize Strateji:**
+        **v5 - Süper Optimize Strateji (Temmuz+Ağustos):**
         
-        🔬 **Kazanan sinyallerin birebir min-max değerleri** kullanılarak optimize edildi.
+        🔬 İki ayda da kazanan sinyallerin **ortak min-max aralıkları:**
         
-        **Kazanan Sinyal Aralıkları:**
-        - RSI: 32-61
-        - ADX: 11-41
-        - VolRatio: >0.6
-        - MFI: 37-65
-        - Stochastic: 0-74
-        - BB Position: 0.05-0.7
+        | İndikatör | Aralık |
+        |-----------|--------|
+        | RSI | 37-52 |
+        | ADX | 13-38 |
+        | VolRatio | 0.6-1.4x |
+        | MFI | 45-64 |
+        | Stochastic | 3-66 |
+        | BB Position | 0.07-0.6 |
         
-        **Başlamak için** sidebar'dan ayarları yapıp **TARAMA BAŞLAT** butonuna tıklayın.
+        Daha az ama daha kaliteli sinyal hedeflenir.
         """)
 
 if __name__ == "__main__":
