@@ -128,7 +128,7 @@ STRATEGY_PRESETS = {
             'Max_BB_Position': 0.55, 'Min_BB_Position': 0.07,
             'Max_Stochastic': 58, 'Min_Stochastic': 4,
         },
-        'desc': '🎯 1.Aşama: Geniş havuz | 2.Aşama: 4 aylık kazanan aralıkları'
+        'desc': '🎯 1.Aşama: Geniş havuz | 2.Aşama: 4 aylık kazanan aralıkları (Kasım: %70 başarı)'
     },
     "📊 Dengeli": {
         'strategy': {
