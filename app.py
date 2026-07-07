@@ -149,19 +149,20 @@ TREND_FILTERS = {
     }
 }
 
+# Varsayılan (backtest için) yükselen trend filtreleri
+DEFAULT_TIGHT_FILTERS = TREND_FILTERS["📈 Yükselen"]['tight_filters']
+
 # ===================== PİYASA TRENDİ TESPİTİ =====================
-@st.cache_data(ttl=300)  # 5 dakika cache
 def detect_market_trend():
     """BIST100 endeksinin trendini tespit et: Yükselen/Yatay/Düşen"""
     try:
-        # XU100 endeksini çek
         ticker = bp.Ticker("XU100.IS")
         end = datetime.now().strftime('%Y-%m-%d')
         start = (datetime.now() - timedelta(days=60)).strftime('%Y-%m-%d')
         df = ticker.history(start=start, end=end)
         
         if df is None or len(df) < 25:
-            return "📈 Yükselen"  # Varsayılan
+            return "📈 Yükselen"
         
         df = df.reset_index()
         date_col = None
@@ -175,25 +176,22 @@ def detect_market_trend():
         df = df.rename(columns={date_col: 'Date'})
         df['Date'] = pd.to_datetime(df['Date'])
         
-        # Kapanış kolonunu bul
         close_col = None
         for c in df.columns:
             if 'close' in c.lower() or 'kapanis' in c.lower():
                 close_col = c
                 break
         if close_col is None:
-            close_col = df.columns[-1]  # Son kolonu kapanış varsay
+            close_col = df.columns[-1]
         
         closes = pd.to_numeric(df[close_col], errors='coerce').dropna()
         
         if len(closes) < 25:
             return "📈 Yükselen"
         
-        # Son kapanış ve MA20
         last_close = closes.iloc[-1]
         ma20 = closes.rolling(20).mean().iloc[-1]
         
-        # Trend belirleme
         diff_pct = ((last_close - ma20) / ma20) * 100
         
         if diff_pct > 2:
@@ -203,7 +201,7 @@ def detect_market_trend():
         else:
             return "📊 Yatay"
     except:
-        return "📈 Yükselen"  # Hata durumunda varsayılan
+        return "📈 Yükselen"
 
 # ===================== STRATEJİ PROFİLLERİ =====================
 STRATEGY_PRESETS = {
@@ -227,7 +225,6 @@ STRATEGY_PRESETS = {
             'Max_Stochastic': 70, 'Min_Stochastic': 5,
             'Max_BB_Position': 0.7, 'Min_BB_Position': 0.05,
         },
-        # tight_filters trend'e göre dinamik olarak eklenecek
         'desc': '🎯 Dinamik trend filtreli - Piyasa şartlarına otomatik uyum sağlar'
     },
     "📊 Dengeli": {
@@ -509,16 +506,10 @@ def scan_stock(sym, date_str, strategy, filters, mid_filters=None, support_filte
         
         r['Perf_Skor'] = score_stock(r)
         
-        # 2A - Temel Süzgeç
         if mid_filters and not apply_filter(r, mid_filters): return None
-        
-        # 2B - Destek Süzgeç
         if support_filters and not apply_filter(r, support_filters): return None
-        
-        # 3. Aşama - Trend'e göre dinamik sıkı filtre
         if tight_filters and not apply_filter(r, tight_filters): return None
         
-        # Forward getiriler
         for s in STEPS:
             if idx + s < len(df):
                 future_close = df['Close'].iloc[idx + s]
@@ -558,10 +549,8 @@ def get_bdays(start, end):
 def get_last_business_day():
     """Son işlem gününü bul"""
     today = datetime.now().date()
-    # Bugün hafta sonu ise Cuma'ya git
     while today.weekday() >= 5:
         today -= timedelta(days=1)
-    # Bugünün verisi henüz oluşmamış olabilir, dünü al
     yesterday = today - timedelta(days=1)
     while yesterday.weekday() >= 5:
         yesterday -= timedelta(days=1)
@@ -575,14 +564,11 @@ def main():
     defaults = {
         "strategy_preset": "🎯 Üç Aşamalı Dinamik",
         "df": None, "ok": False, "t": 0, "days": 0,
-        "selected_trend": None
+        "selected_trend": "📈 Yükselen"
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-    
-    # Otomatik trend tespiti
-    auto_trend = detect_market_trend()
     
     c1, c2, c3 = st.columns([6,1,1])
     with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA PRO - DİNAMİK TREND</div>', unsafe_allow_html=True)
@@ -594,11 +580,6 @@ def main():
         if st.button("🚪 ÇIKIŞ", use_container_width=True):
             st.session_state.clear()
             st.rerun()
-    
-    # Trend göstergesi
-    trend_colors = {"📈 Yükselen": "trend-up", "📊 Yatay": "trend-flat", "📉 Düşen": "trend-down"}
-    auto_color = trend_colors.get(auto_trend, "trend-up")
-    st.markdown(f'<span class="{auto_color}">🤖 Otomatik Trend: {auto_trend}</span>', unsafe_allow_html=True)
     
     with st.sidebar:
         st.markdown("### ⚙️ AYARLAR")
@@ -614,39 +595,6 @@ def main():
         
         st.markdown("---")
         
-        # === TREND SEÇİMİ ===
-        st.markdown("### 📊 Piyasa Trendi")
-        
-        trend_options = list(TREND_FILTERS.keys())
-        # Varsayılan: otomatik tespit edilen
-        default_index = trend_options.index(auto_trend) if auto_trend in trend_options else 0
-        
-        selected_trend = st.selectbox(
-            "Trend Seçimi",
-            trend_options,
-            index=default_index,
-            help="Otomatik tespit edilen trendi değiştirebilirsiniz"
-        )
-        
-        if selected_trend != auto_trend:
-            st.info(f"👤 Manuel seçim: {selected_trend}")
-        
-        # Seçilen trende göre tight_filters
-        tight_filters = TREND_FILTERS[selected_trend]['tight_filters']
-        st.caption(TREND_FILTERS[selected_trend]['desc'])
-        
-        with st.expander("📋 Trend Filtre Detayı"):
-            st.markdown(f"**Trend: {selected_trend}**")
-            st.markdown(f"- RSI: {tight_filters.get('Min_RSI', '-')}-{tight_filters.get('Max_RSI', '-')}")
-            st.markdown(f"- ADX: {tight_filters.get('Min_ADX', '-')}-{tight_filters.get('Max_ADX', '-')}")
-            st.markdown(f"- VolRatio: {tight_filters.get('Min_Volume_MA', '-')}-{tight_filters.get('Max_Volume_MA', '-')}x")
-            st.markdown(f"- MFI: {tight_filters.get('Min_MFI', '-')}-{tight_filters.get('Max_MFI', '-')}")
-            st.markdown(f"- Stochastic: {tight_filters.get('Min_Stochastic', '-')}-{tight_filters.get('Max_Stochastic', '-')}")
-            st.markdown(f"- BB: {tight_filters.get('Min_BB_Position', '-')}-{tight_filters.get('Max_BB_Position', '-')}")
-            st.markdown(f"- Skor > {tight_filters.get('Min_Perf_Score', '-')}")
-        
-        st.markdown("---")
-        
         lists = get_lists()
         secim = st.selectbox("Liste", list(lists.keys()))
         symbols = lists[secim]
@@ -655,20 +603,51 @@ def main():
         st.markdown("### 📅 Tarama Aralığı")
         tip = st.radio("Tip", ["Bugün", "Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
+        # === TREND SEÇİMİ (sadece "Bugün" için aktif) ===
+        tight_filters = DEFAULT_TIGHT_FILTERS  # Varsayılan: Yükselen
+        
         if tip == "Bugün":
-            # Otomatik olarak son işlem gününü bul
+            # Bugün için otomatik trend tespiti
+            auto_trend = detect_market_trend()
+            trend_options = list(TREND_FILTERS.keys())
+            default_index = trend_options.index(auto_trend) if auto_trend in trend_options else 0
+            
+            st.markdown("### 📊 Piyasa Trendi")
+            
+            # Trend göstergesi
+            trend_colors = {"📈 Yükselen": "trend-up", "📊 Yatay": "trend-flat", "📉 Düşen": "trend-down"}
+            auto_color = trend_colors.get(auto_trend, "trend-up")
+            st.markdown(f'<span class="{auto_color}">🤖 Otomatik Trend: {auto_trend}</span>', unsafe_allow_html=True)
+            
+            selected_trend = st.selectbox(
+                "Trend Seçimi (değiştirebilirsiniz)",
+                trend_options,
+                index=default_index
+            )
+            
+            tight_filters = TREND_FILTERS[selected_trend]['tight_filters']
+            st.caption(TREND_FILTERS[selected_trend]['desc'])
+            
+            # Son işlem gününü otomatik bul
             last_bday = get_last_business_day()
             d = last_bday
             start = end = d
             st.caption(f"📅 Son işlem günü: **{d.strftime('%d.%m.%Y')}** ({TURKISH_DAYS[d.weekday()]})")
+            
         elif tip == "Tek Tarih":
+            selected_trend = "📈 Yükselen"  # Backtest için sabit
+            tight_filters = DEFAULT_TIGHT_FILTERS
             d = turkish_date_picker("Tarih Seçin", datetime(2026, 7, 1), "tek")
             start = end = d
         elif tip == "Tarih Aralığı":
+            selected_trend = "📈 Yükselen"
+            tight_filters = DEFAULT_TIGHT_FILTERS
             c1, c2 = st.columns(2)
             with c1: start = turkish_date_picker("Başlangıç", datetime(2026, 7, 1), "bas")
             with c2: end = turkish_date_picker("Bitiş", datetime(2026, 7, 31), "bit")
         else:
+            selected_trend = "📈 Yükselen"
+            tight_filters = DEFAULT_TIGHT_FILTERS
             c1, c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020, 2031), index=6, key="yy")
             with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6, key="mm")
@@ -682,12 +661,15 @@ def main():
         st.markdown(f"📊 **{days}** işlem günü | 📋 **{len(symbols)}** hisse")
         st.markdown(f"⏱️ ~**{days*len(symbols)*0.08/WORKERS:.0f}s**")
         
+        if tip == "Bugün":
+            st.markdown(f"🎯 Trend: **{selected_trend}**")
+        
         btn = st.button("🔍 TARAMA BAŞLAT", use_container_width=True, type="primary")
     
     if btn:
         t0 = time.time()
         
-        with st.spinner(f'🔍 {days} gün taranıyor... Trend: {selected_trend}'):
+        with st.spinner(f'🔍 {days} gün taranıyor...'):
             all_signals = []
             bar = st.progress(0)
             txt = st.empty()
@@ -717,7 +699,7 @@ def main():
     if st.session_state.get('ok'):
         df = st.session_state.df
         
-        st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün | Trend: {selected_trend}")
+        st.markdown(f"### 📊 {len(df)} Sinyal | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün")
         
         c1, c2, c3, c4 = st.columns(4)
         
@@ -769,16 +751,13 @@ def main():
     
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
-        st.markdown(f"""
+        st.markdown("""
         **🎯 Dinamik Trend Filtreli Strateji:**
         
-        🤖 Otomatik Trend Tespiti: **{auto_trend}**
-        
-        | Trend | RSI | ADX | VolRatio | MFI | Stoch |
-        |-------|-----|-----|----------|-----|-------|
-        | 📈 Yükselen | 38-52 | 15-38 | 0.6-1.4 | 45-61 | 5-58 |
-        | 📊 Yatay | 40-50 | 18-35 | 0.7-1.3 | 48-60 | 5-50 |
-        | 📉 Düşen | 40-48 | 20-30 | 0.8-1.2 | 50-60 | 5-40 |
+        | Mod | Trend Filtresi |
+        |-----|---------------|
+        | 📅 Bugün | Otomatik trend tespiti + manuel seçim |
+        | 📅 Geçmiş | Sabit yükselen trend filtreleri |
         
         **📅 Bugün** seçeneği ile otomatik son işlem gününü tarayabilirsiniz.
         """)
