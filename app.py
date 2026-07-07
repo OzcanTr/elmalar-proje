@@ -108,8 +108,8 @@ LOOKBACK, STEPS, WORKERS = 200, [5,10,15,30,60,90], 10
 
 # STRATEJİ PROFİLLERİ
 STRATEGY_PRESETS = {
-    "🎯 İki Aşamalı Optimal": {
-        # 1. AŞAMA: Geniş havuz - sinyal kaçırma
+    "🎯 Üç Aşamalı Kademeli": {
+        # 1. AŞAMA: Geniş havuz
         'strategy': {
             'RSI_max': 70, 'RSI_min': 20,
             'MA200_diff_min': -35, 'MA200_diff_max': 30,
@@ -118,7 +118,40 @@ STRATEGY_PRESETS = {
             'Volume_MA_ratio': 0.3, 'Volume_MA_max': 5.0,
             'MFI_max': 75, 'MFI_min': 20,
         },
-        # 2. AŞAMA: 4 aylık kazananların ortak aralıkları ile daralt
+        # 2A AŞAMASI: Temel süzgeç
+        'mid_filters': {
+            'Min_Perf_Score': 50,
+            'Max_RSI': 55, 'Min_RSI': 35,
+            'Max_ADX': 42, 'Min_ADX': 10,
+            'Min_Volume_MA': 0.5, 'Max_Volume_MA': 2.0,
+        },
+        # 2B AŞAMASI: Destek süzgeç
+        'support_filters': {
+            'Max_MFI': 68, 'Min_MFI': 35,
+            'Max_Stochastic': 70, 'Min_Stochastic': 5,
+            'Max_BB_Position': 0.7, 'Min_BB_Position': 0.05,
+        },
+        # 3. AŞAMA: 5 aylık kazanan süzgeç
+        'tight_filters': {
+            'Min_Perf_Score': 70,
+            'Max_RSI': 52, 'Min_RSI': 38,
+            'Max_ADX': 38, 'Min_ADX': 15,
+            'Min_Volume_MA': 0.6, 'Max_Volume_MA': 1.4,
+            'Max_MFI': 61, 'Min_MFI': 45,
+            'Max_Stochastic': 58, 'Min_Stochastic': 5,
+            'Max_BB_Position': 0.55, 'Min_BB_Position': 0.07,
+        },
+        'desc': '🎯 1.Aşama: Geniş | 2A:Temel süzgeç | 2B:Destek süzgeç | 3:5 aylık kazanan'
+    },
+    "🎯 İki Aşamalı Optimal": {
+        'strategy': {
+            'RSI_max': 70, 'RSI_min': 20,
+            'MA200_diff_min': -35, 'MA200_diff_max': 30,
+            'Stochastic_max': 85, 'Stochastic_min': 0,
+            'ADX_min': 3, 'ADX_max': 50,
+            'Volume_MA_ratio': 0.3, 'Volume_MA_max': 5.0,
+            'MFI_max': 75, 'MFI_min': 20,
+        },
         'filters': {
             'Min_Perf_Score': 70,
             'Max_RSI': 52, 'Min_RSI': 38,
@@ -373,8 +406,8 @@ def check_signal(df, i, strategy, filters):
     except:
         return False
 
-def apply_filters(r, filters):
-    """2. AŞAMA: Sıkı filtreler ile daralt"""
+def apply_filter(r, filters):
+    """Tek seviye filtre uygula"""
     if 'Max_RSI' in filters and r['RSI'] > filters['Max_RSI']: return False
     if 'Min_RSI' in filters and r['RSI'] < filters['Min_RSI']: return False
     if 'Max_ADX' in filters and r['ADX'] > filters['Max_ADX']: return False
@@ -390,7 +423,14 @@ def apply_filters(r, filters):
     if r['Perf_Skor'] < filters.get('Min_Perf_Score', 0): return False
     return True
 
-def scan_stock(sym, date_str, strategy, filters):
+def apply_filters_multi(r, filters_list):
+    """Çoklu filtre seviyesini sırayla uygula"""
+    for filters in filters_list:
+        if not apply_filter(r, filters):
+            return False
+    return True
+
+def scan_stock(sym, date_str, strategy, filters, mid_filters=None, support_filters=None, tight_filters=None):
     try:
         df = get_data(sym, date_str)
         if df is None: return None
@@ -424,8 +464,21 @@ def scan_stock(sym, date_str, strategy, filters):
         
         r['Perf_Skor'] = score_stock(r)
         
-        # 2. AŞAMA: Sıkı filtreler
-        if not apply_filters(r, filters): return None
+        # ÜÇ AŞAMALI FİLTRELEME (yeni profil için)
+        if mid_filters is not None or support_filters is not None or tight_filters is not None:
+            # 2A Aşaması: Temel süzgeç
+            if mid_filters and not apply_filter(r, mid_filters):
+                return None
+            # 2B Aşaması: Destek süzgeç
+            if support_filters and not apply_filter(r, support_filters):
+                return None
+            # 3. Aşama: Sıkı filtre
+            if tight_filters and not apply_filter(r, tight_filters):
+                return None
+        else:
+            # İKİ AŞAMALI FİLTRELEME (eski profil için)
+            if not apply_filter(r, filters):
+                return None
         
         # Forward getiriler (sadece performans ölçümü için)
         for s in STEPS:
@@ -436,11 +489,11 @@ def scan_stock(sym, date_str, strategy, filters):
     except:
         return None
 
-def run_scan(symbols, date, strategy, filters):
+def run_scan(symbols, date, strategy, filters, mid_filters=None, support_filters=None, tight_filters=None):
     results = []
     ds = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futures = {ex.submit(scan_stock, s, ds, strategy, filters):s for s in symbols}
+        futures = {ex.submit(scan_stock, s, ds, strategy, filters, mid_filters, support_filters, tight_filters):s for s in symbols}
         for f in as_completed(futures):
             try:
                 r = f.result()
@@ -464,7 +517,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "🎯 İki Aşamalı Optimal",
+        "strategy_preset": "🎯 Üç Aşamalı Kademeli",
         "df": None, "ok": False, "t": 0, "days": 0
     }
     for k, v in defaults.items():
@@ -472,7 +525,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA - İKİ AŞAMALI</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">📈 BIST SİNYAL TARAMA - ÜÇ AŞAMALI KADEMELİ</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -490,27 +543,31 @@ def main():
         st.session_state.strategy_preset = preset
         
         strategy = STRATEGY_PRESETS[preset]['strategy']
-        filters = STRATEGY_PRESETS[preset]['filters']
+        filters = STRATEGY_PRESETS[preset].get('filters', {})
+        mid_filters = STRATEGY_PRESETS[preset].get('mid_filters', None)
+        support_filters = STRATEGY_PRESETS[preset].get('support_filters', None)
+        tight_filters = STRATEGY_PRESETS[preset].get('tight_filters', None)
         
         st.caption(STRATEGY_PRESETS[preset]['desc'])
         
-        with st.expander("📋 İki Aşamalı Filtre Detayı"):
-            st.markdown(f"""
-            **1. Aşama - Geniş Havuz:**
-            - RSI: {strategy['RSI_min']}-{strategy['RSI_max']}
-            - ADX: {strategy['ADX_min']}-{strategy.get('ADX_max', '∞')}
-            - VolRatio: >{strategy['Volume_MA_ratio']}x
-            - MFI: {strategy.get('MFI_min', 0)}-{strategy['MFI_max']}
+        with st.expander("📋 Filtre Detayı"):
+            st.markdown("**1. Aşama - Geniş Havuz:**")
+            st.markdown(f"- RSI: {strategy['RSI_min']}-{strategy['RSI_max']}, ADX: {strategy['ADX_min']}-{strategy.get('ADX_max', '∞')}, VolRatio: >{strategy['Volume_MA_ratio']}x")
             
-            **2. Aşama - Dar Filtre:**
-            - RSI: {filters.get('Min_RSI', '-')}-{filters.get('Max_RSI', '-')}
-            - ADX: {filters.get('Min_ADX', '-')}-{filters.get('Max_ADX', '-')}
-            - VolRatio: {filters.get('Min_Volume_MA', '-')}-{filters.get('Max_Volume_MA', '-')}x
-            - MFI: {filters.get('Min_MFI', '-')}-{filters.get('Max_MFI', '-')}
-            - Stochastic: {filters.get('Min_Stochastic', '-')}-{filters.get('Max_Stochastic', '-')}
-            - BB: {filters.get('Min_BB_Position', '-')}-{filters.get('Max_BB_Position', '-')}
-            - Skor > {filters.get('Min_Perf_Score', '-')}
-            """)
+            if mid_filters:
+                st.markdown("**2A Aşaması - Temel Süzgeç:**")
+                st.markdown(f"- RSI: {mid_filters.get('Min_RSI', '-')}-{mid_filters.get('Max_RSI', '-')}, ADX: {mid_filters.get('Min_ADX', '-')}-{mid_filters.get('Max_ADX', '-')}, VolRatio: {mid_filters.get('Min_Volume_MA', '-')}-{mid_filters.get('Max_Volume_MA', '-')}x, Skor>{mid_filters.get('Min_Perf_Score', '-')}")
+            
+            if support_filters:
+                st.markdown("**2B Aşaması - Destek Süzgeç:**")
+                st.markdown(f"- MFI: {support_filters.get('Min_MFI', '-')}-{support_filters.get('Max_MFI', '-')}, Stochastic: {support_filters.get('Min_Stochastic', '-')}-{support_filters.get('Max_Stochastic', '-')}, BB: {support_filters.get('Min_BB_Position', '-')}-{support_filters.get('Max_BB_Position', '-')}")
+            
+            if tight_filters:
+                st.markdown("**3. Aşama - Sıkı Filtre:**")
+                st.markdown(f"- RSI: {tight_filters.get('Min_RSI', '-')}-{tight_filters.get('Max_RSI', '-')}, ADX: {tight_filters.get('Min_ADX', '-')}-{tight_filters.get('Max_ADX', '-')}, VolRatio: {tight_filters.get('Min_Volume_MA', '-')}-{tight_filters.get('Max_Volume_MA', '-')}x, MFI: {tight_filters.get('Min_MFI', '-')}-{tight_filters.get('Max_MFI', '-')}, Stochastic: {tight_filters.get('Min_Stochastic', '-')}-{tight_filters.get('Max_Stochastic', '-')}, BB: {tight_filters.get('Min_BB_Position', '-')}-{tight_filters.get('Max_BB_Position', '-')}, Skor>{tight_filters.get('Min_Perf_Score', '-')}")
+            elif filters:
+                st.markdown("**2. Aşama - Dar Filtre:**")
+                st.markdown(f"- RSI: {filters.get('Min_RSI', '-')}-{filters.get('Max_RSI', '-')}, ADX: {filters.get('Min_ADX', '-')}-{filters.get('Max_ADX', '-')}, VolRatio: {filters.get('Min_Volume_MA', '-')}-{filters.get('Max_Volume_MA', '-')}x, MFI: {filters.get('Min_MFI', '-')}-{filters.get('Max_MFI', '-')}, Stochastic: {filters.get('Min_Stochastic', '-')}-{filters.get('Max_Stochastic', '-')}, BB: {filters.get('Min_BB_Position', '-')}-{filters.get('Max_BB_Position', '-')}, Skor>{filters.get('Min_Perf_Score', '-')}")
         
         st.markdown("---")
         
@@ -523,18 +580,18 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2025,11,1), "tek")
+            d = turkish_date_picker("Tarih Seçin", datetime(2025,9,1), "tek")
             start = end = d
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
             with c1:
-                start = turkish_date_picker("Başlangıç", datetime(2025,11,1), "bas")
+                start = turkish_date_picker("Başlangıç", datetime(2025,9,1), "bas")
             with c2:
-                end = turkish_date_picker("Bitiş", datetime(2025,11,30), "bit")
+                end = turkish_date_picker("Bitiş", datetime(2025,9,30), "bit")
         else:
             c1, c2 = st.columns(2)
             with c1: y = st.selectbox("Yıl", range(2020, 2031), index=5, key="yy")
-            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=10, key="mm")
+            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=8, key="mm")
             start = datetime(y, m, 1).date()
             end = (datetime(y, m+1, 1) if m < 12 else datetime(y+1, 1, 1)).date() - timedelta(days=1)
         
@@ -550,14 +607,14 @@ def main():
     if btn:
         t0 = time.time()
         
-        with st.spinner(f'🔍 İki aşamalı tarama... {days} gün'):
+        with st.spinner(f'🔍 {days} gün taranıyor...'):
             all_signals = []
             bar = st.progress(0)
             txt = st.empty()
             
             for i, day in enumerate(bdays):
                 txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{days}")
-                res = run_scan(symbols, day, strategy, filters)
+                res = run_scan(symbols, day, strategy, filters, mid_filters, support_filters, tight_filters)
                 if res:
                     all_signals.extend(res)
                 bar.progress((i+1)/days)
@@ -625,25 +682,27 @@ def main():
         
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📊 CSV", df.to_csv(index=False), "sinyaller_iki_asamali.csv", "text/csv")
+            st.download_button("📊 CSV", df.to_csv(index=False), "sinyaller_uc_asamali.csv", "text/csv")
         with c2:
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 df.to_excel(w, index=False)
-            st.download_button("📑 Excel", buf.getvalue(), "sinyaller_iki_asamali.xlsx",
+            st.download_button("📑 Excel", buf.getvalue(), "sinyaller_uc_asamali.xlsx",
                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     elif not btn:
         st.markdown("### 🚀 Hoş Geldiniz!")
         st.markdown("""
-        **🎯 İki Aşamalı Optimal Strateji:**
+        **🎯 Üç Aşamalı Kademeli Strateji:**
         
         | Aşama | Görev | Filtre |
         |-------|-------|--------|
         | 1. Aşama | Geniş Havuz | RSI:20-70, ADX:3-50, Vol>0.3x |
-        | 2. Aşama | Dar Filtre | RSI:38-52, ADX:14-38, Vol:0.6-1.4x |
+        | 2A Aşama | Temel Süzgeç | RSI:35-55, ADX:10-42, Vol:0.5-2.0x |
+        | 2B Aşama | Destek Süzgeç | MFI:35-68, Stoch:5-70, BB:0.05-0.7 |
+        | 3. Aşama | Sıkı Filtre | 5 aylık kazanan aralıkları |
         
-        4 aylık kazanan sinyallerin ortak aralıkları ile optimize edildi.
+        Kademeli filtreleme ile daha kaliteli sinyaller.
         """)
 
 if __name__ == "__main__":
