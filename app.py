@@ -576,63 +576,126 @@ def main():
         with c5:
             st.metric("Profil", st.session_state.strategy_preset.split()[0])
         
-        # Tüm sinyaller tablosu - BASİT GÖSTERİM
-        st.markdown("### 📋 Tüm Sinyaller")
-        st.dataframe(df, use_container_width=True, height=500)
+        # === SEKMELİ GÖSTERİM ===
+        st.markdown("### 📈 Backtest Sonuçları")
         
-        # Getiri analizi
-        if '+30G_Getiri%' in df.columns:
-            returns_30 = df['+30G_Getiri%'].dropna()
+        tab1, tab2, tab3, tab4 = st.tabs(["📋 Tüm Sinyaller", "🏆 En İyiler", "📊 Getiri Analizi", "🔍 Filtre Etkisi"])
+        
+        with tab1:
+            st.dataframe(df, use_container_width=True, height=500)
+        
+        with tab2:
+            col1, col2 = st.columns(2)
             
-            if len(returns_30) > 0:
-                st.markdown("### 📈 Performans Analizi")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    fig = go.Figure()
-                    fig.add_trace(go.Histogram(
-                        x=returns_30, 
-                        nbinsx=20, 
-                        marker_color='#667eea',
-                        name='Getiri Dağılımı'
-                    ))
-                    fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Başabaş")
-                    fig.add_vline(x=returns_30.mean(), line_dash="dash", line_color="green", 
-                                 annotation_text=f"Ort: %{returns_30.mean():.1f}")
-                    fig.update_layout(
-                        title="30 Günlük Getiri Dağılımı",
-                        xaxis_title="% Getiri",
-                        yaxis_title="Sinyal Sayısı",
-                        showlegend=False
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    win_rate = (returns_30 > 0).sum() / len(returns_30) * 100
-                    avg_win = returns_30[returns_30 > 0].mean() if len(returns_30[returns_30 > 0]) > 0 else 0
-                    avg_loss = returns_30[returns_30 < 0].mean() if len(returns_30[returns_30 < 0]) > 0 else 0
-                    
-                    st.markdown(f"""
-                    **30 Günlük Getiri İstatistikleri:**
-                    
-                    | Metrik | Değer |
-                    |--------|-------|
-                    | Ortalama | **%{returns_30.mean():.1f}** |
-                    | Medyan | %{returns_30.median():.1f} |
-                    | Maksimum | %{returns_30.max():.1f} |
-                    | Minimum | %{returns_30.min():.1f} |
-                    | Std Sapma | %{returns_30.std():.1f} |
-                    | Kazanma Oranı | **%{win_rate:.0f}** |
-                    | Ort. Kazanç | %{avg_win:.1f} |
-                    | Ort. Kayıp | %{avg_loss:.1f} |
-                    | Risk/Getiri | {returns_30.mean()/returns_30.std():.2f} |
-                    """)
+            with col1:
+                st.markdown("**En Yüksek 30G Getiri (Top 15)**")
+                top30 = df.dropna(subset=['+30G_Getiri%']).nlargest(15, '+30G_Getiri%')
+                cols30 = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', '+30G_Getiri%']
+                st.dataframe(top30[[c for c in cols30 if c in top30.columns]], use_container_width=True)
+            
+            with col2:
+                st.markdown("**En Yüksek Skor (Top 15)**")
+                top_skor = df.nlargest(15, 'Perf_Skor')
+                cols_skor = ['Hisse', 'Tarih', 'Kapanis', 'Perf_Skor', 'RSI', 'ADX', 'VolRatio', '+30G_Getiri%']
+                st.dataframe(top_skor[[c for c in cols_skor if c in top_skor.columns]], use_container_width=True)
         
-        # En iyi 10
-        st.markdown("### 🏆 En İyi 10 Sinyal")
-        top10 = df.head(10)
-        st.dataframe(top10, use_container_width=True)
+        with tab3:
+            if '+30G_Getiri%' in df.columns:
+                returns_30 = df['+30G_Getiri%'].dropna()
+                
+                if len(returns_30) > 0:
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        fig = go.Figure()
+                        fig.add_trace(go.Histogram(
+                            x=returns_30, 
+                            nbinsx=30, 
+                            marker_color='#667eea',
+                            name='Getiri'
+                        ))
+                        fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Başabaş")
+                        fig.add_vline(x=returns_30.mean(), line_dash="dash", line_color="green", 
+                                     annotation_text=f"Ort: %{returns_30.mean():.1f}")
+                        fig.update_layout(
+                            title="30 Günlük Getiri Dağılımı",
+                            xaxis_title="% Getiri",
+                            yaxis_title="Sinyal Sayısı",
+                            showlegend=False,
+                            height=400
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    with col2:
+                        win_rate = (returns_30 > 0).sum() / len(returns_30) * 100
+                        avg_win = returns_30[returns_30 > 0].mean() if len(returns_30[returns_30 > 0]) > 0 else 0
+                        avg_loss = returns_30[returns_30 < 0].mean() if len(returns_30[returns_30 < 0]) > 0 else 0
+                        
+                        st.markdown(f"""
+                        **Genel İstatistikler:**
+                        
+                        | Metrik | Değer |
+                        |--------|-------|
+                        | Sinyal Sayısı | {len(returns_30)} |
+                        | Ortalama Getiri | **%{returns_30.mean():.1f}** |
+                        | Medyan Getiri | %{returns_30.median():.1f} |
+                        | Maksimum | %{returns_30.max():.1f} |
+                        | Minimum | %{returns_30.min():.1f} |
+                        | Kazanma Oranı | **%{win_rate:.0f}** |
+                        | Ort. Kazanç | %{avg_win:.1f} |
+                        | Ort. Kayıp | %{avg_loss:.1f} |
+                        | Risk/Getiri | {returns_30.mean()/returns_30.std():.2f} |
+                        """)
+                    
+                    # Skor grubuna göre analiz
+                    st.markdown("**Skor Grubuna Göre Performans:**")
+                    df_valid = df.dropna(subset=['+30G_Getiri%']).copy()
+                    df_valid['Skor_Grubu'] = pd.cut(df_valid['Perf_Skor'], 
+                                                    bins=[0,60,70,80,90,100], 
+                                                    labels=['<60', '60-70', '70-80', '80-90', '90-100'])
+                    skor_analiz = df_valid.groupby('Skor_Grubu', observed=False).agg(
+                        Sinyal=('+30G_Getiri%', 'count'),
+                        Ort_Getiri=('+30G_Getiri%', 'mean'),
+                        Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
+                    ).round(1)
+                    st.dataframe(skor_analiz, use_container_width=True)
+        
+        with tab4:
+            st.markdown("**Filtre Bazlı Kazanma Oranları**")
+            
+            df_valid = df.dropna(subset=['+30G_Getiri%']).copy()
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**RSI Aralığı**")
+                df_valid['RSI_Grup'] = pd.cut(df_valid['RSI'], bins=[25,35,45,55,65], labels=['25-35','35-45','45-55','55-65'])
+                rsi_analiz = df_valid.groupby('RSI_Grup', observed=False).agg(
+                    Sinyal=('+30G_Getiri%', 'count'),
+                    Ort_Getiri=('+30G_Getiri%', 'mean'),
+                    Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
+                ).round(1)
+                st.dataframe(rsi_analiz, use_container_width=True)
+            
+            with col2:
+                st.markdown("**ADX Aralığı**")
+                df_valid['ADX_Grup'] = pd.cut(df_valid['ADX'], bins=[0,15,25,35,50], labels=['<15','15-25','25-35','>35'])
+                adx_analiz = df_valid.groupby('ADX_Grup', observed=False).agg(
+                    Sinyal=('+30G_Getiri%', 'count'),
+                    Ort_Getiri=('+30G_Getiri%', 'mean'),
+                    Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
+                ).round(1)
+                st.dataframe(adx_analiz, use_container_width=True)
+            
+            with col3:
+                st.markdown("**VolRatio Aralığı**")
+                df_valid['Vol_Grup'] = pd.cut(df_valid['VolRatio'], bins=[0,0.6,0.8,1.0,1.5,10], labels=['<0.6','0.6-0.8','0.8-1.0','1.0-1.5','>1.5'])
+                vol_analiz = df_valid.groupby('Vol_Grup', observed=False).agg(
+                    Sinyal=('+30G_Getiri%', 'count'),
+                    Ort_Getiri=('+30G_Getiri%', 'mean'),
+                    Kazanma=('+30G_Getiri%', lambda x: (x>0).sum()/len(x)*100)
+                ).round(1)
+                st.dataframe(vol_analiz, use_container_width=True)
         
         # Export
         st.markdown("### 💾 Dışa Aktar")
@@ -653,7 +716,8 @@ def main():
         - 🎯 3 strateji profili (Dengeli / Agresif / Muhafazakar)
         - 📅 Tarih aralığı tarama
         - 📊 Performans analizi ve getiri histogramı
-        - 📋 Tam sinyal dökümü
+        - 📋 Tam sinyal dökümü (sekmeli gösterim)
+        - 🔍 Filtre etkisi analizi (RSI/ADX/VolRatio bazında)
         - 💾 CSV/Excel export
         
         **Başlamak için** sidebar'dan ayarları yapıp **TARAMA BAŞLAT** butonuna tıklayın.
