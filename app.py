@@ -658,5 +658,8 @@ def main():
         | Stochastic | 4-58 |
         | BB Position | 0.07-0.55 |
         
-        En güvenilir, piyasa koşullarından bağımsız strateji.
-        ""
+              En güvenilir, piyasa koşullarından bağımsız strateji.
+        """)
+
+if __name__ == "__main__":
+    main()
