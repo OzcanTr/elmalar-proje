@@ -125,13 +125,13 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER (OPTİMİZE - KAPANIŞ VERİSİ) =====================
-LOOKBACK = 150              # 150 işlem günü
-MIN_HISTORY = 120           # Minimum veri gereksinimi
+LOOKBACK = 150
+MIN_HISTORY = 120
 STEPS = [5, 10, 15, 30, 60, 90]
-FORWARD_DAYS = 60           # 60 gün ileri veri
-MIN_FORWARD_DAYS = 5        # En az 5 gün ileri veri olmalı
+FORWARD_DAYS = 60
+MIN_FORWARD_DAYS = 5
 SIGNAL_COOLDOWN = 10
-CACHE_TTL = 86400           # 24 SAAT (Kapanış verileri için)
+CACHE_TTL = 86400  # 24 SAAT
 
 cpu = os.cpu_count() or 4
 WORKERS = min(16, cpu * 3)
@@ -203,7 +203,7 @@ def get_lists():
 # ===================== HIZLI VERİ ÇEKME =====================
 @st.cache_data(ttl=CACHE_TTL)
 def get_data_fast(symbol, date_str):
-    """Hızlı veri çekme - Sinyal için sadece geçmiş veri, performans için ileri veri"""
+    """Hızlı veri çekme"""
     try:
         ref = pd.to_datetime(date_str)
         today = datetime.now().date()
@@ -214,19 +214,15 @@ def get_data_fast(symbol, date_str):
         sym = symbol.upper().strip()
         if not sym.endswith(".IS"): sym += ".IS"
         
-        # Geçmiş veri (sinyal için)
         start = (ref - timedelta(days=LOOKBACK*2)).strftime('%Y-%m-%d')
         
-        # İleri veri kontrolü - eğer tarih bugüne yakınsa ileri veri çekme
         days_until_today = (today - ref.date()).days
         
         if days_until_today >= MIN_FORWARD_DAYS:
-            # Yeterli ileri veri var, çek
             end = (ref + timedelta(days=FORWARD_DAYS)).strftime('%Y-%m-%d')
             if pd.to_datetime(end).date() > today:
                 end = today.strftime('%Y-%m-%d')
         else:
-            # İleri veri yok veya çok az, sadece geçmişi çek
             end = ref.strftime('%Y-%m-%d')
         
         ticker = bp.Ticker(sym)
@@ -303,7 +299,6 @@ def calc_indicators_fast(df):
     clean_df['Close'] = df['Close'].values.astype(float)
     clean_df['Volume'] = df['Volume'].values.astype(float)
     
-    # ===== TÜM HAREKETLİ ORTALAMALAR =====
     for p in [5, 10, 20, 50, 200]:
         clean_df[f'MA{p}'] = clean_df['Close'].rolling(p).mean()
         clean_df[f'VMA{p}'] = clean_df['Volume'].rolling(p).mean()
@@ -399,7 +394,6 @@ def calc_indicators_fast(df):
 
 # ===================== SKORLAMA =====================
 def score_stock_v23_fast(r):
-    """V2.3 - Hızlı skorlama"""
     s = 0
     adx = r.get('ADX', 20)
     rsi = r.get('RSI', 50)
@@ -409,7 +403,7 @@ def score_stock_v23_fast(r):
     bb = r.get('BB_Position', 0.5)
     ma200_dist = r.get('MA200_Mesafe%', 0)
     
-    # ===== TREND YÖNÜ SKORU (SADECE MA5-MA10-MA20) =====
+    # TREND YÖNÜ
     ma5 = r.get('MA5', 0)
     ma10 = r.get('MA10', 0)
     ma20 = r.get('MA20', 0)
@@ -418,58 +412,43 @@ def score_stock_v23_fast(r):
     ma200_val = r.get('MA200', 0)
     
     trend_score = 0
-    
-    # Güçlü yükseliş
     if ma5 > ma10 > ma20:
         trend_score = 15
-    # Yükseliş başlangıcı
     elif ma5 > ma10 and ma10 <= ma20:
         trend_score = 10
-    # Erken toparlanma
     elif ma5 > ma20:
         trend_score = 7
-    # Yatay
     elif abs(ma5 - ma10) / (ma10 + 0.001) < 0.003:
         trend_score = 3
-    # Düşüş
     elif ma5 < ma10 < ma20:
         trend_score = -10
     else:
         trend_score = 0
-    
     s += trend_score
     
-    # ===== MA50 VE MA200 FİLTRE/BONUS =====
-    # MA50 üzerinde
+    # MA50/200 FİLTRE/BONUS
     if close > ma50:
         s += 3
-    
-    # MA200 üzerinde
     if close > ma200_val:
         s += 5
-    
-    # MA200 mesafesi
     if 0 <= ma200_dist <= 10:
         s += 4
     elif ma200_dist > 40:
         s -= 4
     
-    # ===== ANA KATMANLAR =====
-    # Trend Quality (10%)
+    # ANA KATMANLAR
     if 16 <= adx <= 22: s += 10
     elif 22 < adx <= 28: s += 8
     elif 28 < adx <= 35: s += 5
     elif 12 <= adx < 16: s += 7
     else: s += 0
     
-    # Money Flow (15%)
     if 45 <= rsi <= 58: s += 10
     elif 40 <= rsi < 45 or 58 < rsi <= 65: s += 7
     else: s += 0
     if cmf > 0.05: s += 5
     elif cmf > 0: s += 3
     
-    # Momentum (25%)
     mom_score = 0
     if 'ADX_Slope3' in r and not pd.isna(r.get('ADX_Slope3', 0)):
         mom_score += r['ADX_Slope3'] * 2
@@ -479,50 +458,40 @@ def score_stock_v23_fast(r):
         mom_score += r['RSI_Slope3'] * 1.5
     if 'VolRatio_Slope3' in r and not pd.isna(r.get('VolRatio_Slope3', 0)):
         mom_score += r['VolRatio_Slope3'] * 1.5
-    
     mom_score = max(-30, min(30, mom_score))
     mom_norm = max(0, min(100, (mom_score / 30) * 50 + 50))
     s += mom_norm * 0.25
     
-    # Breakout (20%)
     br_score = 0
     if bb > 0.80: br_score += 12
     elif bb > 0.65: br_score += 8
     elif bb > 0.50: br_score += 5
     elif bb > 0.35: br_score += 3
-    
     if stoch > 60: br_score += 8
     elif stoch > 40: br_score += 5
     elif stoch > 20: br_score += 3
-    
     if vol > 1.0: br_score += 7
     elif vol > 0.7: br_score += 4
-    
     s += br_score
     
-    # Relative Strength (15%)
     rs_score = r.get('RS_Score', 0)
     s += rs_score * 0.75
     
-    # ===== BONUSLAR =====
+    # BONUSLAR
     if adx > 35:
         s += 8
     elif adx > 25:
         s += 5
-    
     if vol > 1.2:
         s += 4
-    
     if cmf > 0.10:
         s += 3
-    
     if stoch < 30 and r.get('Stochastic_Slope3', 0) > 0:
         s += 4
-    
     if 0.45 <= bb <= 0.65:
         s += 3
     
-    # ===== CEZALAR =====
+    # CEZALAR
     penalty = 0
     if stoch > 85 and bb > 0.85: penalty += 3
     if rsi > 75: penalty += 2
@@ -548,7 +517,6 @@ def score_stock_v23_fast(r):
 def calculate_signal_score_v23_fast(df, idx, symbol=None, index_df=None, date_index_map=None, min_final_score=40):
     row = df.iloc[idx]
     
-    # RS Score hesapla
     rs_score = 0
     if index_df is not None and date_index_map is not None and idx >= 20:
         try:
@@ -580,7 +548,6 @@ def calculate_signal_score_v23_fast(df, idx, symbol=None, index_df=None, date_in
         except:
             pass
     
-    # Skor verilerini hazırla
     score_data = {
         'ADX': row.get('ADX', 20),
         'RSI': row.get('RSI', 50),
@@ -674,7 +641,6 @@ def apply_filter_fast(r, filters):
 
 # ===================== BAŞARI METRİĞİ =====================
 def is_successful(signal_event):
-    """Risk/Getiri bazlı başarı kontrolü"""
     max_return = signal_event.get('+30G_Max_Getiri%')
     max_dd = signal_event.get('Max_DD_30G', 0)
     
@@ -763,7 +729,6 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
             if not apply_filter_fast(signal_event, profile):
                 return None
         
-        # ===== PERFORMANS METRİKLERİ (İLERİ VERİ VARSA) =====
         if len(df) > idx + 1:
             for s in STEPS:
                 if idx + s < len(df):
@@ -799,7 +764,6 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
             else:
                 signal_event['Risk_Ratio_30G'] = None
             
-            # Hedef Analizi
             target_10 = signal_price * 1.10
             days_to_target_10 = None
             for i in range(idx + 1, min(idx + 90, len(df))):
@@ -816,7 +780,6 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
                     break
             signal_event['Days_To_%20_Target'] = days_to_target_20
             
-            # Başarı Metriği
             signal_event['Is_Successful'] = is_successful(signal_event)
         else:
             signal_event['Is_Successful'] = None
@@ -1023,7 +986,7 @@ def main():
             with c2:
                 end = turkish_date_picker("Bitiş", datetime(2026, 7, 31), "bit")
                 
-        else:  # "Ay" seçeneği
+        else:
             c1, c2 = st.columns(2)
             with c1:
                 y = st.selectbox("Yıl", range(2020, 2031), index=6, key="yy")
@@ -1212,7 +1175,7 @@ def main():
             )
             st.plotly_chart(fig3, use_container_width=True)
         
-        # ===== TEKRAR SİNYAL ANALİZİ (DÜZELTİLDİ) =====
+        # ===== TEKRAR SİNYAL ANALİZİ (DÜZELTİLDİ - V2) =====
         st.markdown("### 🔄 Tekrar Sinyal Veren Hisseler")
         
         repeat_df = df.groupby('Hisse').agg(
@@ -1224,13 +1187,22 @@ def main():
             Ort_DD=('Max_DD_30G', 'mean')
         ).reset_index()
         
-        # DÜZELTİLDİ: Sıfır ve NaN kontrolü
+        # DÜZELTİLDİ V2: Güvenli hesaplama
         def calculate_success_rate(row):
             test = row['Test']
-            if pd.isna(test) or test == 0:
-                return 0
-            basari = row['Basari'] if not pd.isna(row['Basari']) else 0
-            return (basari / test * 100).round(1)
+            basari = row['Basari']
+            
+            # NaN veya None kontrolü
+            if pd.isna(test) or pd.isna(basari):
+                return 0.0
+            if test == 0:
+                return 0.0
+            
+            # Değerleri float'a çevir
+            test = float(test)
+            basari = float(basari)
+            
+            return round((basari / test * 100), 1)
         
         repeat_df['Başarı_Oranı'] = repeat_df.apply(calculate_success_rate, axis=1)
         
