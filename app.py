@@ -125,11 +125,11 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ===================== SABİTLER (OPTİMİZE) =====================
-LOOKBACK = 150  # MA200 için yeterli
+LOOKBACK = 150
 MIN_HISTORY = 120
 STEPS = [5,10,15,30,60,90]
 FORWARD_DAYS = 90
-MIN_FORWARD_DAYS = 5  # En az 5 gün ileri veri olmalı
+MIN_FORWARD_DAYS = 5
 SIGNAL_COOLDOWN = 10
 CACHE_TTL = 300
 
@@ -764,7 +764,6 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
                 return None
         
         # ===== PERFORMANS METRİKLERİ (İLERİ VERİ VARSA) =====
-        # Sadece ileri veri varsa hesapla
         if len(df) > idx + 1:
             for s in STEPS:
                 if idx + s < len(df):
@@ -820,7 +819,6 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
             # Başarı Metriği
             signal_event['Is_Successful'] = is_successful(signal_event)
         else:
-            # İleri veri yok
             signal_event['Is_Successful'] = None
         
         return signal_event
@@ -1014,17 +1012,24 @@ def main():
         st.markdown("### 📅 Tarama Aralığı")
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
+        # ===== DÜZELTİLDİ: Ay seçeneğinde tarih seçici gözükmüyor =====
         if tip == "Tek Tarih":
             d = turkish_date_picker("Tarih Seçin", datetime(2026, 7, 1), "tek")
             start = end = d
+            
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
-            with c1: start = turkish_date_picker("Başlangıç", datetime(2026, 7, 1), "bas")
-            with c2: end = turkish_date_picker("Bitiş", datetime(2026, 7, 31), "bit")
-        else:
+            with c1:
+                start = turkish_date_picker("Başlangıç", datetime(2026, 7, 1), "bas")
+            with c2:
+                end = turkish_date_picker("Bitiş", datetime(2026, 7, 31), "bit")
+                
+        else:  # "Ay" seçeneği
             c1, c2 = st.columns(2)
-            with c1: y = st.selectbox("Yıl", range(2020, 2031), index=6)
-            with c2: m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6)
+            with c1:
+                y = st.selectbox("Yıl", range(2020, 2031), index=6, key="yy")
+            with c2:
+                m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6, key="mm")
             start = datetime(y, m, 1).date()
             end = (datetime(y, m+1, 1) if m < 12 else datetime(y+1, 1, 1)).date() - timedelta(days=1)
         
@@ -1125,7 +1130,6 @@ def main():
         unique_stocks = df['Hisse'].nunique()
         with c3: st.metric("📋 Benzersiz Hisse", f"{unique_stocks}")
         
-        # Başarı oranı - sadece test edilebilir sinyaller
         success_df = df[df['Is_Successful'].notna()]
         if len(success_df) > 0:
             success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
