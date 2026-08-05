@@ -1012,7 +1012,6 @@ def main():
         st.markdown("### 📅 Tarama Aralığı")
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
-        # ===== DÜZELTİLDİ: Ay seçeneğinde tarih seçici gözükmüyor =====
         if tip == "Tek Tarih":
             d = turkish_date_picker("Tarih Seçin", datetime(2026, 7, 1), "tek")
             start = end = d
@@ -1213,7 +1212,7 @@ def main():
             )
             st.plotly_chart(fig3, use_container_width=True)
         
-        # Tekrar sinyal analizi
+        # ===== TEKRAR SİNYAL ANALİZİ (DÜZELTİLDİ) =====
         st.markdown("### 🔄 Tekrar Sinyal Veren Hisseler")
         
         repeat_df = df.groupby('Hisse').agg(
@@ -1225,10 +1224,15 @@ def main():
             Ort_DD=('Max_DD_30G', 'mean')
         ).reset_index()
         
-        repeat_df['Başarı_Oranı'] = repeat_df.apply(
-            lambda row: (row['Basari'] / row['Test'] * 100).round(1) if row['Test'] > 0 else 0,
-            axis=1
-        )
+        # DÜZELTİLDİ: Sıfır ve NaN kontrolü
+        def calculate_success_rate(row):
+            test = row['Test']
+            if pd.isna(test) or test == 0:
+                return 0
+            basari = row['Basari'] if not pd.isna(row['Basari']) else 0
+            return (basari / test * 100).round(1)
+        
+        repeat_df['Başarı_Oranı'] = repeat_df.apply(calculate_success_rate, axis=1)
         
         repeat_df = repeat_df.fillna(0)
         repeat_df = repeat_df.sort_values('Sinyal', ascending=False)
