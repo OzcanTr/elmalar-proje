@@ -138,26 +138,26 @@ CACHE_TTL = 300
 cpu = os.cpu_count() or 4
 WORKERS = min(12, cpu * 2)
 
-# ===================== STRATEJİ PRESETLERİ (GÜNCELLENDİ - V2.2) =====================
+# ===================== STRATEJİ PRESETLERİ (GÜNCELLENDİ - V2.2 FIX) =====================
 STRATEGY_PRESETS = {
-    "🎯 Erken Trend Avcısı V2.2 (Optimize)": {
+    "🎯 Erken Trend Avcısı V2.2 (Fix)": {
         'base_filters': {
-            'RSI_max': 55, 'RSI_min': 38,
-            'MA200_diff_min': -30, 'MA200_diff_max': 30,
-            'ADX_min': 18,
-            'Volume_MA_ratio': 0.6,
-            'MFI_max': 65, 'MFI_min': 35,
-            'Stochastic_max': 45, 'Stochastic_min': 5,
-            'BB_Position_min': 0.05, 'BB_Position_max': 0.45,
-            'CMF_min': 0.0,
+            'RSI_max': 65, 'RSI_min': 30,
+            'MA200_diff_min': -40, 'MA200_diff_max': 50,
+            'ADX_min': 12,
+            'Volume_MA_ratio': 0.4,
+            'MFI_max': 70, 'MFI_min': 30,
+            'Stochastic_max': 65, 'Stochastic_min': 3,
+            'BB_Position_min': 0.02, 'BB_Position_max': 0.65,
+            'CMF_min': -0.03,
         },
         'profiles': {
-            'Erken': {'Min_Perf_Score': 50},
-            'Orta': {'Min_Perf_Score': 60, 'Max_RSI': 50, 'Min_ADX': 20},
-            'Sıkı': {'Min_Perf_Score': 70, 'Max_RSI': 48, 'Min_RSI': 40, 
-                     'Min_ADX': 22, 'Max_ADX': 35}
+            'Erken': {'Min_Perf_Score': 40},
+            'Orta': {'Min_Perf_Score': 50, 'Max_RSI': 55, 'Min_ADX': 15},
+            'Sıkı': {'Min_Perf_Score': 60, 'Max_RSI': 50, 'Min_RSI': 35, 
+                     'Min_ADX': 18, 'Max_ADX': 35}
         },
-        'desc': '🎯 V2.2: Eski başarılı sinyalleri (ASELS, KUYAS, GRTHO) yakalamak için optimize edildi'
+        'desc': '🎯 V2.2 Fix: Daha esnek filtreler, 01.07-13.07 aralığı için uygun'
     },
     "📊 Dengeli V2.1": {
         'base_filters': {
@@ -177,19 +177,33 @@ STRATEGY_PRESETS = {
     },
     "🚀 Agresif (Çok Erken)": {
         'base_filters': {
-            'RSI_max': 70, 'RSI_min': 25,
-            'MA200_diff_min': -45, 'MA200_diff_max': 70,
-            'ADX_min': 12,
-            'Volume_MA_ratio': 0.4,
-            'MFI_max': 75, 'MFI_min': 25,
-            'Stochastic_max': 70, 'Stochastic_min': 3,
-            'BB_Position_min': 0.02, 'BB_Position_max': 0.70,
-            'CMF_min': -0.03,
+            'RSI_max': 75, 'RSI_min': 20,
+            'MA200_diff_min': -50, 'MA200_diff_max': 80,
+            'ADX_min': 8,
+            'Volume_MA_ratio': 0.3,
+            'MFI_max': 80, 'MFI_min': 20,
+            'Stochastic_max': 80, 'Stochastic_min': 2,
+            'BB_Position_min': 0.01, 'BB_Position_max': 0.80,
+            'CMF_min': -0.05,
         },
         'profiles': {
-            'Agresif': {'Min_Perf_Score': 40}
+            'Agresif': {'Min_Perf_Score': 35}
         },
-        'desc': '🚀 Daha fazla sinyal, daha geniş filtreler (daha fazla yanlış pozitif riski)'
+        'desc': '🚀 Maksimum sinyal, minimum filtre (en fazla yanlış pozitif)'
+    },
+    "🔬 Test (Çok Esnek)": {
+        'base_filters': {
+            'RSI_max': 80, 'RSI_min': 15,
+            'MA200_diff_min': -60, 'MA200_diff_max': 100,
+            'ADX_min': 5,
+            'Volume_MA_ratio': 0.2,
+            'MFI_max': 90, 'MFI_min': 10,
+            'Stochastic_max': 90, 'Stochastic_min': 2,
+            'BB_Position_min': 0.01, 'BB_Position_max': 0.95,
+            'CMF_min': -0.10,
+        },
+        'profiles': {},
+        'desc': '🔬 Test için maksimum esneklik - sinyal var mı diye kontrol et'
     }
 }
 
@@ -287,6 +301,7 @@ def get_data(symbol, date_str):
         ref = pd.to_datetime(date_str)
         today = datetime.now().date()
         
+        # ===== KRİTİK: Eğer tarih bugünden ileriyse =====
         if ref.date() > today:
             ref = pd.Timestamp(today)
         
@@ -764,7 +779,7 @@ def check_signal(df, i, base_filters):
             return False
         
         cmf = df['CMF'].iloc[i]
-        if pd.isna(cmf) or cmf < base_filters.get('CMF_min', 0):
+        if pd.isna(cmf) or cmf < base_filters.get('CMF_min', -0.03):
             return False
         
         return True
@@ -999,7 +1014,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "🎯 Erken Trend Avcısı V2.2 (Optimize)",
+        "strategy_preset": "🎯 Erken Trend Avcısı V2.2 (Fix)",
         "df": None, "ok": False, "t": 0, "days": 0,
         "min_final_score": 40,
         "signal_history": defaultdict(dict)
@@ -1043,7 +1058,7 @@ def main():
                 step=1,
                 help="📈 **Artırırsanız:** Daha az sinyal, daha güçlü trend\n"
                      "📉 **Azaltırsanız:** Daha fazla sinyal, daha erken\n"
-                     "🎯 **Hedef:** 38-42 (aşırı satım bölgesinden çıkış)"
+                     "🎯 **Hedef:** 30-40 (aşırı satım bölgesinden çıkış)"
             )
         with col2:
             rsi_max = st.number_input(
@@ -1053,7 +1068,7 @@ def main():
                 step=1,
                 help="📈 **Artırırsanız:** Daha fazla sinyal, trend devam edenler\n"
                      "📉 **Azaltırsanız:** Daha az sinyal, henüz hareket başlamamış\n"
-                     "🎯 **Hedef:** 50-55 (erken trend)"
+                     "🎯 **Hedef:** 55-65 (erken trend)"
             )
         
         # ADX
@@ -1064,7 +1079,7 @@ def main():
             step=1,
             help="📈 **Artırırsanız:** Daha az sinyal, daha güçlü trend\n"
                  "📉 **Azaltırsanız:** Daha fazla sinyal, daha erken\n"
-                 "🎯 **Hedef:** 18-22 (trend başlangıcı)"
+                 "🎯 **Hedef:** 12-18 (trend başlangıcı)"
         )
         
         # VolRatio
@@ -1076,7 +1091,7 @@ def main():
             format="%.2f",
             help="📈 **Artırırsanız:** Sadece yüksek hacimli hisseler\n"
                  "📉 **Azaltırsanız:** Düşük hacimli hisseler de dahil\n"
-                 "🎯 **Hedef:** 0.6-0.8 (normal hacim)"
+                 "🎯 **Hedef:** 0.4-0.6 (normal hacim)"
         )
         
         # Stochastic
@@ -1089,7 +1104,7 @@ def main():
                 step=1,
                 help="📈 **Artırırsanız:** Daha az sinyal\n"
                      "📉 **Azaltırsanız:** Daha fazla sinyal\n"
-                     "🎯 **Hedef:** 5-10 (dip bölge)"
+                     "🎯 **Hedef:** 3-5 (dip bölge)"
             )
         with col2:
             stoch_max = st.number_input(
@@ -1099,7 +1114,7 @@ def main():
                 step=1,
                 help="📈 **Artırırsanız:** Daha fazla sinyal (hareket başlamış)\n"
                      "📉 **Azaltırsanız:** Daha az sinyal (henüz başlamamış)\n"
-                     "🎯 **Hedef:** 35-45 (erken hareket)"
+                     "🎯 **Hedef:** 45-65 (erken hareket)"
             )
         
         # BB_Position
@@ -1113,7 +1128,7 @@ def main():
                 format="%.2f",
                 help="📈 **Artırırsanız:** Daha az sinyal\n"
                      "📉 **Azaltırsanız:** Daha fazla sinyal\n"
-                     "🎯 **Hedef:** 0.05-0.10 (dip bölge)"
+                     "🎯 **Hedef:** 0.02-0.05 (dip bölge)"
             )
         with col2:
             bb_max = st.number_input(
@@ -1124,19 +1139,19 @@ def main():
                 format="%.2f",
                 help="📈 **Artırırsanız:** Daha fazla sinyal (hareket başlamış)\n"
                      "📉 **Azaltırsanız:** Daha az sinyal (henüz başlamamış)\n"
-                     "🎯 **Hedef:** 0.35-0.45 (hareket başlangıcı)"
+                     "🎯 **Hedef:** 0.45-0.65 (hareket başlangıcı)"
             )
         
         # CMF
         cmf_min = st.number_input(
             "CMF Min",
             min_value=-0.5, max_value=0.5,
-            value=base_filters.get('CMF_min', 0.0),
+            value=base_filters.get('CMF_min', -0.03),
             step=0.01,
             format="%.2f",
             help="📈 **Artırırsanız:** Sadece pozitif para akışı\n"
                  "📉 **Azaltırsanız:** Negatif para akışı da dahil\n"
-                 "🎯 **Hedef:** 0.0 (para akışı dönüşü)"
+                 "🎯 **Hedef:** -0.03 (para akışı dönüşü)"
         )
         
         # MA200
@@ -1149,7 +1164,7 @@ def main():
                 step=1,
                 help="📈 **Artırırsanız:** Daha az sinyal (fiyat MA200'den uzak)\n"
                      "📉 **Azaltırsanız:** Daha fazla sinyal\n"
-                     "🎯 **Hedef:** -30 (MA200'den çok uzak değil)"
+                     "🎯 **Hedef:** -40 (MA200'den çok uzak değil)"
             )
         with col2:
             ma200_max = st.number_input(
@@ -1159,7 +1174,7 @@ def main():
                 step=1,
                 help="📈 **Artırırsanız:** Daha fazla sinyal (fiyat MA200 üzerinde)\n"
                      "📉 **Azaltırsanız:** Daha az sinyal\n"
-                     "🎯 **Hedef:** 30 (MA200'den çok uzak değil)"
+                     "🎯 **Hedef:** 50 (MA200'den çok uzak değil)"
             )
         
         st.markdown("---")
@@ -1290,6 +1305,20 @@ def main():
         bdays = get_bdays(pd.to_datetime(start), pd.to_datetime(end))
         days = len(bdays)
         
+        # ===== TARİH KONTROLÜ =====
+        today = datetime.now().date()
+        if isinstance(end, datetime):
+            end_date = end.date()
+        else:
+            end_date = end
+        
+        if end_date > today:
+            st.warning(f"⚠️ Seçilen bitiş tarihi ({end_date}) bugünden ({today}) ileri!")
+            st.info(f"📌 Sistem bugünün tarihine ({today}) kadar olan verileri kullanacak.")
+            end = today
+            bdays = get_bdays(pd.to_datetime(start), pd.to_datetime(end))
+            days = len(bdays)
+        
         st.markdown("---")
         st.markdown(f"📊 **{days}** işlem günü | 📋 **{len(symbols)}** hisse")
         st.markdown(f"⏱️ ~**{days*len(symbols)*0.05/WORKERS:.0f}s**")
@@ -1314,7 +1343,7 @@ def main():
             except:
                 pass
         
-        with st.spinner(f'🔍 {days} gün taranıyor... (V2.2 Optimize)'):
+        with st.spinner(f'🔍 {days} gün taranıyor... (V2.2 Fix)'):
             all_signals = []
             signal_history = st.session_state.signal_history
             bar = st.progress(0)
@@ -1356,7 +1385,7 @@ def main():
             st.session_state.t = time.time() - t0
             st.session_state.days = days
         else:
-            st.warning("⚠️ Sinyal olayı bulunamadı!")
+            st.warning("⚠️ Sinyal olayı bulunamadı! Lütfen filtreleri gevşetin veya tarih aralığını değiştirin.")
             st.session_state.ok = False
     
     if st.session_state.get('ok') and st.session_state.df is not None:
@@ -1469,7 +1498,7 @@ def main():
             )
     
     elif not btn:
-        st.markdown("### 🎯 Sinyal Olayı Backtest Motoru V2.2 (Optimize)")
+        st.markdown("### 🎯 Sinyal Olayı Backtest Motoru V2.2 (Fix)")
         st.markdown("""
         **Event-Based Signal Backtest Engine - Optimize Sürüm:**
 
@@ -1477,16 +1506,16 @@ def main():
         - **Signal_Date:** Sinyalin oluştuğu kapanış günü
         - **Entry_Price:** Signal_Date kapanış fiyatı
         - **Amaç:** Signal_Date sonrası (ertesi işlem günü) işlem planı
+        - **Tarih Kontrolü:** Seçilen tarih bugünden ileriyse otomatik olarak bugün kullanılır
 
-        **🎯 V2.2 Optimizasyonları:**
-        - ✅ **ADX eşiği 18'e yükseltildi** (daha güçlü trend başlangıcı)
-        - ✅ **RSI aralığı daraltıldı** (38-55)
-        - ✅ **Stochastic Max 45'e düşürüldü** (aşırı satım bölgesi)
-        - ✅ **BB_Position Max 0.45'e düşürüldü** (dip bölge)
-        - ✅ **Momentum ağırlığı 15%'e düşürüldü** (erken sinyalleri korumak için)
-        - ✅ **RS ağırlığı 15%'e yükseltildi** (endeksten güçlü olanları öne çıkarmak için)
+        **🎯 V2.2 Fix Özellikleri:**
+        - ✅ **Daha esnek filtreler** (ADX 12, RSI 30-65, Stoch 65, BB 0.65)
+        - ✅ **CMF -0.03'e düşürüldü** (daha fazla sinyal)
+        - ✅ **Tarih kontrolü eklendi** (ileri tarihler otomatik düzeltilir)
+        - ✅ **Test preset'i eklendi** (maksimum esneklik)
+        - ✅ **Uyarı mesajları** (sinyal yoksa ne yapılacağı belirtilir)
 
-        **📊 V2.2 Hedefi:** ASELS, KUYAS, GRTHO, ENERGY, BRYAT gibi başarılı sinyalleri yakalamak
+        **📊 V2.2 Hedefi:** 01.07-13.07.2026 aralığında sinyal üretmek
         """)
 
 if __name__ == "__main__":
