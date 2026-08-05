@@ -798,7 +798,7 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
         ref = pd.to_datetime(ref_date).normalize()
         dates = df['Date'].dt.normalize()
         
-        # ===== KRİTİK DÜZELTME: <= kullan (seçilen tarih dahil) =====
+        # ===== KRİTİK: <= kullan (seçilen tarih dahil) =====
         # Seçilen tarihin kapanış verisine göre sinyal
         valid = np.where(dates <= ref)[0]
         if len(valid) == 0:
@@ -811,6 +811,11 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
         
         if not check_signal(signal_df, signal_idx, base_filters):
             return None
+        
+        # ===== SİNYAL TANIMLARI =====
+        # Signal_Date: Sinyalin oluştuğu kapanış günü
+        # Entry_Price: Signal_Date kapanış fiyatı
+        # Forward_Performance: Signal_Date sonrası günlerdeki hareket
         
         signal_price = signal_df['Close'].iloc[signal_idx]
         signal_date = signal_df['Date'].iloc[signal_idx]
@@ -825,7 +830,7 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
         signal_event = {
             'Signal_ID': signal_id,
             'Hisse': sym,
-            'Entry_Date': signal_date.strftime('%Y-%m-%d'),
+            'Signal_Date': signal_date.strftime('%Y-%m-%d'),
             'Entry_Price': round(signal_price, 2),
             
             'RSI': round(signal_df['RSI'].iloc[signal_idx], 1),
@@ -862,7 +867,7 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
             if not apply_filter(signal_event, profile):
                 return None
         
-        # ===== PERFORMANS METRİKLERİ (ORİJİNAL DF ÜZERİNDEN) =====
+        # ===== PERFORMANS METRİKLERİ =====
         # Forward getiriler - sinyal gününden sonraki günler
         for s in STEPS:
             if idx + s < len(df):
@@ -971,7 +976,7 @@ def get_bdays(start, end):
     return days
 
 # ===================== COOLDOWN FONKSİYONU =====================
-def is_cooldown_active(hisse, entry_date, signal_history, cooldown_days):
+def is_cooldown_active(hisse, signal_date, signal_history, cooldown_days):
     """İşlem günü bazlı cooldown kontrolü"""
     if hisse not in signal_history:
         return False
@@ -983,11 +988,11 @@ def is_cooldown_active(hisse, entry_date, signal_history, cooldown_days):
     try:
         bdiff = np.busday_count(
             np.datetime64(last_signal),
-            np.datetime64(entry_date)
+            np.datetime64(signal_date)
         )
         return bdiff <= cooldown_days
     except:
-        days_diff = (pd.to_datetime(entry_date) - pd.to_datetime(last_signal)).days
+        days_diff = (pd.to_datetime(signal_date) - pd.to_datetime(last_signal)).days
         return days_diff <= cooldown_days
 
 # ===================== ANA UYGULAMA =====================
@@ -1141,7 +1146,7 @@ def main():
             except:
                 pass
         
-        with st.spinner(f'🔍 {days} gün taranıyor... (Kapanış Sinyali)'):
+        with st.spinner(f'🔍 {days} gün taranıyor... (Kapanış Sinyali - <= kullanılıyor)'):
             all_signals = []
             signal_history = st.session_state.signal_history
             bar = st.progress(0)
@@ -1155,16 +1160,16 @@ def main():
                 if res:
                     for signal in res:
                         hisse = signal['Hisse']
-                        entry_date = signal['Entry_Date']
+                        signal_date = signal['Signal_Date']
                         
                         if use_cooldown:
-                            if is_cooldown_active(hisse, entry_date, signal_history, cooldown_days):
+                            if is_cooldown_active(hisse, signal_date, signal_history, cooldown_days):
                                 continue
                         
                         all_signals.append(signal)
                         
                         signal_history[hisse] = {
-                            'last_date': entry_date,
+                            'last_date': signal_date,
                             'last_score': signal['Final_Score']
                         }
                 
@@ -1255,11 +1260,18 @@ def main():
         
         st.markdown("### ⏰ Sinyal Zamanlama Analizi")
         # DÜZELTİLDİ: Açıklama yeni mantığa göre
-        st.info("📌 **Not:** Her sinyal seçilen tarihin kapanış verisine göre oluşturulur. "
-                "Entry_Price = seçilen gün kapanış fiyatıdır. "
-                "Sinyal, takip eden işlem günü için aday olarak değerlendirilir.")
+        st.info("""
+        **📌 Sinyal Zamanlama Mantığı:**
         
-        signal_dates = df['Entry_Date'].value_counts().sort_index()
+        - **Signal_Date:** Sinyalin oluştuğu kapanış günü
+        - **Entry_Price:** Signal_Date kapanış fiyatı
+        - **Amaç:** Signal_Date sonrası (ertesi işlem günü) işlem planı
+        - **Forward Performans:** Signal_Date sonrası günlerdeki hareket
+        
+        Örnek: 05.08.2026 seçildi → 05.08.2026 kapanış verisi → 06.08.2026 işlem planı
+        """)
+        
+        signal_dates = df['Signal_Date'].value_counts().sort_index()
         if len(signal_dates) > 0:
             fig_dates = go.Figure()
             fig_dates.add_trace(go.Bar(
@@ -1269,7 +1281,7 @@ def main():
             ))
             fig_dates.update_layout(
                 title="Günlere Göre Sinyal Sayısı",
-                xaxis_title="Tarih (Kapanış Günü)",
+                xaxis_title="Signal_Date (Kapanış Günü)",
                 yaxis_title="Sinyal Sayısı",
                 height=300
             )
@@ -1346,7 +1358,7 @@ def main():
         
         st.markdown("### 🛡️ Risk/Getiri Analizi")
         
-        risk_df = df[['Hisse', 'Entry_Date', 'Final_Score', '+30G_Getiri%', 'Max_DD_30G', 'Risk_Ratio_30G']].dropna()
+        risk_df = df[['Hisse', 'Signal_Date', 'Final_Score', '+30G_Getiri%', 'Max_DD_30G', 'Risk_Ratio_30G']].dropna()
         if len(risk_df) > 0:
             risk_df = risk_df.sort_values('Risk_Ratio_30G', ascending=False)
             st.dataframe(risk_df.head(10), use_container_width=True)
@@ -1362,7 +1374,7 @@ def main():
                     colorscale='Viridis',
                     showscale=True
                 ),
-                text=risk_df['Hisse'] + ' ' + risk_df['Entry_Date'],
+                text=risk_df['Hisse'] + ' ' + risk_df['Signal_Date'],
                 hoverinfo='text'
             ))
             fig_risk.update_layout(
@@ -1375,7 +1387,7 @@ def main():
         
         st.markdown("### 📋 Sinyal Olayları Listesi")
         
-        display_cols = ['Signal_ID', 'Hisse', 'Entry_Date', 'Entry_Price', 'Final_Score', 'Quality_Penalty',
+        display_cols = ['Signal_ID', 'Hisse', 'Signal_Date', 'Entry_Price', 'Final_Score', 'Quality_Penalty',
                        'Trend_Quality', 'Money_Score', 'Momentum_Score', 'Breakout_Score', 
                        'RS_Score', 'Risk_Score', 'RSI', 'ADX', 'VolRatio', 'CMF',
                        '+30G_Getiri%', '+30G_Max_Getiri%', 'Max_DD_30G', 'Risk_Ratio_30G',
@@ -1410,7 +1422,7 @@ def main():
                     <p style="font-size: 20px; font-weight: bold;">{row['Final_Score']:.0f}</p>
                     <p style="font-size: 12px;">Sinyal Olayı</p>
                     <hr style="margin: 5px 0;">
-                    <p style="font-size: 11px;">📅 {row['Entry_Date']}</p>
+                    <p style="font-size: 11px;">📅 {row['Signal_Date']}</p>
                     <p style="font-size: 12px;">💰 {row['Entry_Price']} TL</p>
                     <p style="font-size: 12px;">📊 RSI: {row.get('RSI', 'N/A')} | ADX: {row.get('ADX', 'N/A')}</p>
                     <p style="font-size: 11px;">📈 30G: %{row.get('+30G_Getiri%', 'N/A')}</p>
@@ -1472,14 +1484,21 @@ def main():
         **Event-Based Signal Backtest Engine - Final Sürüm:**
 
         **📌 KRİTİK: Sinyal Zamanlama Mantığı**
-        - Seçilen tarih = **Kapanış günü**
-        - Entry_Price = **Seçilen gün kapanış fiyatı**
-        - Sinyal = **Kapanış sonrası oluşan durum**
-        - Amaç = **Takip eden işlem günü için aday liste**
-        - Örnek: 05.08.2026 seçildi → 05.08.2026 kapanış verisi → 06.08.2026 işlem planı
+        
+        | Tanım | Açıklama |
+        |-------|----------|
+        | **Signal_Date** | Sinyalin oluştuğu kapanış günü |
+        | **Entry_Price** | Signal_Date kapanış fiyatı |
+        | **Sinyal** | Kapanış sonrası oluşan durum |
+        | **Amaç** | Takip eden işlem günü için aday liste |
+        | **Forward Performans** | Signal_Date sonrası günlerdeki hareket |
+        
+        Örnek: 05.08.2026 seçildi → 05.08.2026 kapanış verisi → 06.08.2026 işlem planı
+        **Kodda:** `valid = np.where(dates <= ref)[0]` kullanılıyor
 
         **🔧 Son İyileştirmeler:**
         - ✅ **Tarih mantığı:** `<=` kullanıldı (seçilen gün dahil)
+        - ✅ **Net tanımlar:** Signal_Date, Entry_Price, Forward_Performance
         - ✅ **Look-ahead bias koruması:** Sinyal anına kadar veri izolasyonu
         - ✅ **Önceden veri yükleme:** 10x-30x hız artışı
         - ✅ **İşlem günü bazlı cooldown:** `np.busday_count`
