@@ -86,8 +86,8 @@ def check_password():
     
     if st.button("🚀 GİRİŞ", use_container_width=True, type="primary", key=f"b_{st.session_state.login_counter}"):
         try:
-            correct_user = st.secrets["USER"]
-            correct_pwd = st.secrets["PASSWORD"]
+            correct_user = st.secrets["ADMIN"]
+            correct_pwd = st.secrets["Elma*"]
         except:
             st.error("⚠️ secrets.toml dosyası eksik! Lütfen USER ve PASSWORD tanımlayın.")
             return False
