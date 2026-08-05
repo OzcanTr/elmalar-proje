@@ -85,12 +85,15 @@ def check_password():
     pwd = st.text_input("🔒 Şifre", type="password", key=f"p_{st.session_state.login_counter}")
     
     if st.button("🚀 GİRİŞ", use_container_width=True, type="primary", key=f"b_{st.session_state.login_counter}"):
+        # ===== GEÇİCİ FALLBACK (SADECE TEST İÇİN) =====
         try:
-            correct_user = st.secrets["ADMIN"]
-            correct_pwd = st.secrets["Elma*"]
+            correct_user = st.secrets["USER"]
+            correct_pwd = st.secrets["PASSWORD"]
         except:
-            st.error("⚠️ secrets.toml dosyası eksik! Lütfen USER ve PASSWORD tanımlayın.")
-            return False
+            # secrets.toml yoksa hardcoded değerleri kullan (TEST AMAÇLI)
+            correct_user = "ADMIN"
+            correct_pwd = "Elma*"
+            st.warning("⚠️ secrets.toml bulunamadı! Test modunda çalışıyor.")
             
         if user == correct_user and pwd == correct_pwd:
             st.session_state.authenticated = True
