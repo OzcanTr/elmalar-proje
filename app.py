@@ -85,26 +85,32 @@ def check_password():
     pwd = st.text_input("🔒 Şifre", type="password", key=f"p_{st.session_state.login_counter}")
     
     if st.button("🚀 GİRİŞ", use_container_width=True, type="primary", key=f"b_{st.session_state.login_counter}"):
-        # ===== GEÇİCİ FALLBACK (SADECE TEST İÇİN) =====
         try:
             correct_user = st.secrets["USER"]
             correct_pwd = st.secrets["PASSWORD"]
+            if user == correct_user and pwd == correct_pwd:
+                st.session_state.authenticated = True
+                msg.success("✅ Başarılı!")
+                time.sleep(0.3)
+                st.rerun()
+            else:
+                st.session_state.login_counter += 1
+                msg.error("❌ Hatalı!")
+                time.sleep(0.3)
+                st.rerun()
         except:
-            # secrets.toml yoksa hardcoded değerleri kullan (TEST AMAÇLI)
-            correct_user = "ADMIN"
-            correct_pwd = "Elma*"
-            st.warning("⚠️ secrets.toml bulunamadı! Test modunda çalışıyor.")
-            
-        if user == correct_user and pwd == correct_pwd:
-            st.session_state.authenticated = True
-            msg.success("✅ Başarılı!")
-            time.sleep(0.3)
-            st.rerun()
-        else:
-            st.session_state.login_counter += 1
-            msg.error("❌ Hatalı!")
-            time.sleep(0.3)
-            st.rerun()
+            # secrets.toml yoksa test modu
+            st.warning("⚠️ secrets.toml bulunamadı! Test modu: ADMIN/Elma*")
+            if user == "ADMIN" and pwd == "Elma*":
+                st.session_state.authenticated = True
+                msg.success("✅ Başarılı!")
+                time.sleep(0.3)
+                st.rerun()
+            else:
+                st.session_state.login_counter += 1
+                msg.error("❌ Hatalı!")
+                time.sleep(0.3)
+                st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
     return False
@@ -264,11 +270,9 @@ def get_data(symbol, date_str):
         if ref.date() > today:
             ref = pd.Timestamp(today)
         
-        # Geçmiş ve ileri veriyi çek
         start = (ref - timedelta(days=LOOKBACK*2)).strftime('%Y-%m-%d')
         end = (ref + timedelta(days=FORWARD_DAYS)).strftime('%Y-%m-%d')
         
-        # Bugünden ileri gidemez
         if pd.to_datetime(end).date() > today:
             end = today.strftime('%Y-%m-%d')
         
@@ -755,12 +759,11 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
         ref = pd.to_datetime(date_str).normalize()
         dates = df['Date'].dt.normalize()
         
-        # ===== KRİTİK DÜZELTME: Sadece ref'den önceki tarihler =====
-        # 05.08.2026 işlem günü için 04.08.2026 kapanışı incelenir
-        valid = np.where(dates < ref)[0]  # <= yerine <
+        # KRİTİK: Sadece ref'den önceki tarihler - bir önceki gün kapanışı
+        valid = np.where(dates < ref)[0]
         if len(valid) == 0:
             return None
-        idx = valid[-1]  # En son kapanış
+        idx = valid[-1]
         
         if not check_signal(df, idx, base_filters):
             return None
@@ -775,7 +778,6 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
             'Entry_Date': signal_date.strftime('%Y-%m-%d'),
             'Entry_Price': round(signal_price, 2),
             
-            # Göstergeler
             'RSI': round(df['RSI'].iloc[idx], 1),
             'ADX': round(df['ADX'].iloc[idx], 1),
             'VolRatio': round(df['VolRatio'].iloc[idx], 2),
@@ -790,7 +792,6 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
         
         signal_event['Perf_Skor'] = score_stock_early(signal_event)
         
-        # Skorlar
         scores = calculate_signal_score(df, idx, weights, sym, index_df, date_index_map)
         signal_event.update({
             'Base_Score': scores['Base_Score'],
@@ -803,13 +804,11 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
             'Final_Score': scores['Final_Score']
         })
         
-        # Profil filtresi
         if profile:
             if not apply_filter(signal_event, profile):
                 return None
         
         # ===== PERFORMANS METRİKLERİ =====
-        # Forward getiriler (Kapanış bazlı)
         for s in STEPS:
             if idx + s < len(df):
                 future_close = df['Close'].iloc[idx + s]
@@ -820,7 +819,6 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
             else:
                 signal_event[f'+{s}G_Getiri%'] = None
         
-        # Maksimum Getiri
         for s in STEPS:
             if idx + s < len(df):
                 future_window = df.iloc[idx:idx+s+1]
@@ -832,7 +830,6 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
             else:
                 signal_event[f'+{s}G_Max_Getiri%'] = None
         
-        # Max Drawdown
         max_dd = 0
         if idx + 30 < len(df):
             low_valley = df['Low'].iloc[idx:idx+31].min()
@@ -841,7 +838,6 @@ def scan_stock(sym, date_str, base_filters, weights, profile=None, index_df=None
         
         signal_event['Max_DD_30G'] = round(max_dd, 1)
         
-        # Risk Ayarlı Getiri
         if signal_event.get('+30G_Getiri%') is not None and max_dd > 0:
             signal_event['Risk_Ratio_30G'] = round(signal_event['+30G_Getiri%'] / max_dd, 2)
         else:
@@ -948,6 +944,20 @@ def main():
             w_rs = st.slider("RS", 0.0, 1.0, 0.10, 0.05, key="w_rs")
             w_tq = st.slider("Trend Kalite", 0.0, 1.0, 0.05, 0.05, key="w_tq")
         
+        total_w = w_base + w_momentum + w_money + w_trend + w_rs + w_tq
+        if total_w > 0:
+            weights = {
+                'w_base': w_base/total_w,
+                'w_momentum': w_momentum/total_w,
+                'w_money': w_money/total_w,
+                'w_trend': w_trend/total_w,
+                'w_rs': w_rs/total_w,
+                'w_tq': w_tq/total_w
+            }
+        else:
+            weights = {'w_base': 0.20, 'w_momentum': 0.30, 'w_money': 0.20, 
+                      'w_trend': 0.15, 'w_rs': 0.10, 'w_tq': 0.05}
+        
         st.markdown("---")
         st.markdown("### 📊 SİNYAL FİLTRELERİ")
         
@@ -1045,7 +1055,6 @@ def main():
         
         st.markdown(f"### 📊 {len(df)} Sinyal Olayı | ⚡ {st.session_state.t:.1f}s | 📅 {st.session_state.days} gün")
         
-        # Metrikler
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1: st.metric("Toplam Sinyal", len(df))
         with c2: st.metric("Ort. Final Skor", f"{df['Final_Score'].mean():.0f}")
@@ -1069,9 +1078,8 @@ def main():
         # ===== SİNYAL ZAMANLAMA ANALİZİ =====
         st.markdown("### ⏰ Sinyal Zamanlama Analizi")
         st.info("📌 **Not:** Her sinyal bir önceki günün kapanışına göre oluşturulur. "
-                f"Örneğin {bdays[0].strftime('%d.%m.%Y')} işlem günü için {bdays[0] - timedelta(days=1) if bdays[0].weekday() > 0 else bdays[0] - timedelta(days=3)} kapanışı incelenir.")
+                f"Örneğin {bdays[0].strftime('%d.%m.%Y')} işlem günü için bir önceki işlem günü kapanışı incelenir.")
         
-        # Sinyal tarihi dağılımı
         signal_dates = df['Entry_Date'].value_counts().sort_index()
         if len(signal_dates) > 0:
             fig_dates = go.Figure()
@@ -1098,7 +1106,6 @@ def main():
         perf_by_score.columns = ['Sinyal Sayısı', 'Ort. Getiri %', 'Std']
         st.dataframe(perf_by_score, use_container_width=True)
         
-        # Başarı oranı grafiği
         st.markdown("#### 🎯 Skor Grubuna Göre Başarı Oranı")
         success_by_score = df.groupby('Score_Group').apply(
             lambda x: (x['+30G_Getiri%'] > 0).sum() / len(x) * 100 if len(x) > 0 else 0
