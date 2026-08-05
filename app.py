@@ -124,12 +124,12 @@ st.markdown("""<style>
     .signal-event { background-color: #3498db; color: white; padding: 2px 8px; border-radius: 12px; }
 </style>""", unsafe_allow_html=True)
 
-# ===================== SABİTLER (DÜZELTİLDİ) =====================
-LOOKBACK = 260  # 200 günlük MA için yeterli
-LOOKBACK_MA = 220  # Minimum veri gereksinimi
-MIN_HISTORY = 220
+# ===================== SABİTLER (OPTİMİZE) =====================
+LOOKBACK = 150  # MA200 için yeterli
+MIN_HISTORY = 120
 STEPS = [5,10,15,30,60,90]
 FORWARD_DAYS = 90
+MIN_FORWARD_DAYS = 5  # En az 5 gün ileri veri olmalı
 SIGNAL_COOLDOWN = 10
 CACHE_TTL = 300
 
@@ -203,7 +203,7 @@ def get_lists():
 # ===================== HIZLI VERİ ÇEKME =====================
 @st.cache_data(ttl=CACHE_TTL)
 def get_data_fast(symbol, date_str):
-    """Hızlı veri çekme - DÜZELTİLDİ"""
+    """Hızlı veri çekme - Sinyal için sadece geçmiş veri, performans için ileri veri"""
     try:
         ref = pd.to_datetime(date_str)
         today = datetime.now().date()
@@ -214,12 +214,20 @@ def get_data_fast(symbol, date_str):
         sym = symbol.upper().strip()
         if not sym.endswith(".IS"): sym += ".IS"
         
-        # LOOKBACK 260 gün -> yaklaşık 520 takvim günü (MA200 için yeterli)
+        # Geçmiş veri (sinyal için)
         start = (ref - timedelta(days=LOOKBACK*2)).strftime('%Y-%m-%d')
-        end = (ref + timedelta(days=FORWARD_DAYS)).strftime('%Y-%m-%d')
         
-        if pd.to_datetime(end).date() > today:
-            end = today.strftime('%Y-%m-%d')
+        # İleri veri kontrolü - eğer tarih bugüne yakınsa ileri veri çekme
+        days_until_today = (today - ref.date()).days
+        
+        if days_until_today >= MIN_FORWARD_DAYS:
+            # Yeterli ileri veri var, çek
+            end = (ref + timedelta(days=FORWARD_DAYS)).strftime('%Y-%m-%d')
+            if pd.to_datetime(end).date() > today:
+                end = today.strftime('%Y-%m-%d')
+        else:
+            # İleri veri yok veya çok az, sadece geçmişi çek
+            end = ref.strftime('%Y-%m-%d')
         
         ticker = bp.Ticker(sym)
         df = ticker.history(start=start, end=end)
@@ -281,7 +289,7 @@ def get_data_fast(symbol, date_str):
 
 # ===================== GÖSTERGE HESAPLAMA =====================
 def calc_indicators_fast(df):
-    """Hızlı gösterge hesaplama - DÜZELTİLDİ"""
+    """Hızlı gösterge hesaplama"""
     if df is None or len(df) < MIN_HISTORY:
         return None
     
@@ -389,9 +397,9 @@ def calc_indicators_fast(df):
     
     return clean_df
 
-# ===================== SKORLAMA (DÜZELTİLDİ) =====================
+# ===================== SKORLAMA =====================
 def score_stock_v23_fast(r):
-    """V2.3 - Hızlı skorlama - DÜZELTİLDİ"""
+    """V2.3 - Hızlı skorlama"""
     s = 0
     adx = r.get('ADX', 20)
     rsi = r.get('RSI', 50)
@@ -478,7 +486,7 @@ def score_stock_v23_fast(r):
     
     # Breakout (20%)
     br_score = 0
-    if bb > 0.80: br_score += 12  # DÜZELTİLDİ: 0.65 → 0.80
+    if bb > 0.80: br_score += 12
     elif bb > 0.65: br_score += 8
     elif bb > 0.50: br_score += 5
     elif bb > 0.35: br_score += 3
@@ -496,7 +504,7 @@ def score_stock_v23_fast(r):
     rs_score = r.get('RS_Score', 0)
     s += rs_score * 0.75
     
-    # ===== BONUSLAR (DÜZELTİLDİ - ELIF KULLANILDI) =====
+    # ===== BONUSLAR =====
     if adx > 35:
         s += 8
     elif adx > 25:
@@ -513,9 +521,6 @@ def score_stock_v23_fast(r):
     
     if 0.45 <= bb <= 0.65:
         s += 3
-    
-    if 0 <= ma200_dist <= 10:
-        s += 4  # Zaten yukarıda eklendi, tekrar ekleme
     
     # ===== CEZALAR =====
     penalty = 0
@@ -590,7 +595,6 @@ def calculate_signal_score_v23_fast(df, idx, symbol=None, index_df=None, date_in
         'RSI_Slope3': row.get('RSI_Slope3', 0),
         'VolRatio_Slope3': row.get('VolRatio_Slope3', 0),
         'Stochastic_Slope3': row.get('Stochastic_Slope3', 0),
-        # MA'lar
         'MA5': row.get('MA5', 0),
         'MA10': row.get('MA10', 0),
         'MA20': row.get('MA20', 0),
@@ -663,12 +667,12 @@ def apply_filter_fast(r, filters):
         if 'Min_Stochastic' in filters and r.get('Stochastic', 100) < filters['Min_Stochastic']: return False
         if 'Max_BB_Position' in filters and r.get('BB_Position', 0) > filters['Max_BB_Position']: return False
         if 'Min_BB_Position' in filters and r.get('BB_Position', 1) < filters['Min_BB_Position']: return False
-        if r['Final_Score'] < filters.get('Min_Final_Score', 0): return False  # DÜZELTİLDİ: Perf_Skor → Final_Score
+        if r['Final_Score'] < filters.get('Min_Final_Score', 0): return False
         return True
     except:
         return False
 
-# ===================== BAŞARI METRİĞİ (DÜZELTİLDİ) =====================
+# ===================== BAŞARI METRİĞİ =====================
 def is_successful(signal_event):
     """Risk/Getiri bazlı başarı kontrolü"""
     max_return = signal_event.get('+30G_Max_Getiri%')
@@ -677,10 +681,7 @@ def is_successful(signal_event):
     if max_return is None or max_dd is None or max_dd == 0:
         return None
     
-    # Risk/Getiri Oranı
     rr = max_return / max_dd
-    
-    # RR > 2 ise başarılı
     if rr > 2:
         return 1
     else:
@@ -762,60 +763,65 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
             if not apply_filter_fast(signal_event, profile):
                 return None
         
-        # PERFORMANS METRİKLERİ
-        for s in STEPS:
-            if idx + s < len(df):
-                future_close = df['Close'].iloc[idx + s]
-                if pd.notna(future_close) and signal_price != 0:
-                    signal_event[f'+{s}G_Getiri%'] = round(((future_close - signal_price) / signal_price) * 100, 2)
+        # ===== PERFORMANS METRİKLERİ (İLERİ VERİ VARSA) =====
+        # Sadece ileri veri varsa hesapla
+        if len(df) > idx + 1:
+            for s in STEPS:
+                if idx + s < len(df):
+                    future_close = df['Close'].iloc[idx + s]
+                    if pd.notna(future_close) and signal_price != 0:
+                        signal_event[f'+{s}G_Getiri%'] = round(((future_close - signal_price) / signal_price) * 100, 2)
+                    else:
+                        signal_event[f'+{s}G_Getiri%'] = None
                 else:
                     signal_event[f'+{s}G_Getiri%'] = None
-            else:
-                signal_event[f'+{s}G_Getiri%'] = None
-        
-        for s in STEPS:
-            if idx + s < len(df):
-                future_window = df.iloc[idx:idx+s+1]
-                max_price = future_window['High'].max()
-                if pd.notna(max_price) and signal_price != 0:
-                    signal_event[f'+{s}G_Max_Getiri%'] = round(((max_price - signal_price) / signal_price) * 100, 2)
+            
+            for s in STEPS:
+                if idx + s < len(df):
+                    future_window = df.iloc[idx:idx+s+1]
+                    max_price = future_window['High'].max()
+                    if pd.notna(max_price) and signal_price != 0:
+                        signal_event[f'+{s}G_Max_Getiri%'] = round(((max_price - signal_price) / signal_price) * 100, 2)
+                    else:
+                        signal_event[f'+{s}G_Max_Getiri%'] = None
                 else:
                     signal_event[f'+{s}G_Max_Getiri%'] = None
+            
+            max_dd = 0
+            if idx + 30 < len(df):
+                low_valley = df['Low'].iloc[idx+1:idx+31].min()
+                if signal_price > 0:
+                    max_dd = ((signal_price - low_valley) / signal_price) * 100
+            
+            signal_event['Max_DD_30G'] = round(max_dd, 1)
+            
+            if signal_event.get('+30G_Getiri%') is not None and max_dd > 0:
+                signal_event['Risk_Ratio_30G'] = round(signal_event['+30G_Getiri%'] / max_dd, 2)
             else:
-                signal_event[f'+{s}G_Max_Getiri%'] = None
-        
-        max_dd = 0
-        if idx + 30 < len(df):
-            low_valley = df['Low'].iloc[idx+1:idx+31].min()
-            if signal_price > 0:
-                max_dd = ((signal_price - low_valley) / signal_price) * 100
-        
-        signal_event['Max_DD_30G'] = round(max_dd, 1)
-        
-        if signal_event.get('+30G_Getiri%') is not None and max_dd > 0:
-            signal_event['Risk_Ratio_30G'] = round(signal_event['+30G_Getiri%'] / max_dd, 2)
+                signal_event['Risk_Ratio_30G'] = None
+            
+            # Hedef Analizi
+            target_10 = signal_price * 1.10
+            days_to_target_10 = None
+            for i in range(idx + 1, min(idx + 90, len(df))):
+                if df['High'].iloc[i] >= target_10:
+                    days_to_target_10 = i - idx
+                    break
+            signal_event['Days_To_%10_Target'] = days_to_target_10
+            
+            target_20 = signal_price * 1.20
+            days_to_target_20 = None
+            for i in range(idx + 1, min(idx + 90, len(df))):
+                if df['High'].iloc[i] >= target_20:
+                    days_to_target_20 = i - idx
+                    break
+            signal_event['Days_To_%20_Target'] = days_to_target_20
+            
+            # Başarı Metriği
+            signal_event['Is_Successful'] = is_successful(signal_event)
         else:
-            signal_event['Risk_Ratio_30G'] = None
-        
-        # Hedef Analizi
-        target_10 = signal_price * 1.10
-        days_to_target_10 = None
-        for i in range(idx + 1, min(idx + 90, len(df))):
-            if df['High'].iloc[i] >= target_10:
-                days_to_target_10 = i - idx
-                break
-        signal_event['Days_To_%10_Target'] = days_to_target_10
-        
-        target_20 = signal_price * 1.20
-        days_to_target_20 = None
-        for i in range(idx + 1, min(idx + 90, len(df))):
-            if df['High'].iloc[i] >= target_20:
-                days_to_target_20 = i - idx
-                break
-        signal_event['Days_To_%20_Target'] = days_to_target_20
-        
-        # Başarı Metriği - Risk/Getiri bazlı
-        signal_event['Is_Successful'] = is_successful(signal_event)
+            # İleri veri yok
+            signal_event['Is_Successful'] = None
         
         return signal_event
     except Exception as e:
@@ -1119,12 +1125,13 @@ def main():
         unique_stocks = df['Hisse'].nunique()
         with c3: st.metric("📋 Benzersiz Hisse", f"{unique_stocks}")
         
+        # Başarı oranı - sadece test edilebilir sinyaller
         success_df = df[df['Is_Successful'].notna()]
         if len(success_df) > 0:
             success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
             with c4: st.metric("✅ Başarı Oranı (RR>2)", f"%{success_rate:.0f}")
         else:
-            with c4: st.metric("✅ Başarı Oranı", "Veri Yok")
+            with c4: st.metric("✅ Başarı Oranı", "Veri Yok (ileri veri yok)")
         
         r30 = df['+30G_Getiri%'].dropna()
         with c5:
@@ -1276,32 +1283,25 @@ def main():
     elif not btn:
         st.markdown("### ⚡ Sinyal Olayı Backtest Motoru V2.3 (FİNAL)")
         st.markdown("""
-        **Final Sürüm - Tüm Düzeltmeler Yapıldı:**
+        **Final Sürüm - Optimize Edilmiş Veri Çekme:**
 
-        **📊 MA Kullanımı (DÜZELTİLDİ):**
+        **📊 Veri Çekme Mantığı:**
+        - Sinyal için: **Sadece geçmiş veri** (hızlı)
+        - Performans için: **İleri veri** (opsiyonel)
+        - Eğer tarih bugüne 5 günden yakınsa → **ileri veri çekilmez**
+
+        **📈 MA Kullanımı:**
         | MA | Kullanım Amacı |
         |----|----------------|
-        | **MA5** | Çok kısa vadeli trend (1 hafta) |
-        | **MA10** | Kısa vadeli trend (2 hafta) |
+        | **MA5** | Çok kısa vadeli trend |
+        | **MA10** | Kısa vadeli trend |
         | **MA20** | Ana kısa/orta trend yönü |
-        | **MA50** | Trend filtresi (Close > MA50 = +3) |
-        | **MA200** | Uzun vadeli filtre (Close > MA200 = +5) |
+        | **MA50** | Trend filtresi |
+        | **MA200** | Uzun vadeli filtre |
 
-        **🎯 Trend Yönü Skoru:**
-        - MA5 > MA10 > MA20 → +15 (Güçlü yükseliş)
-        - MA5 > MA10 ve MA10 ≤ MA20 → +10 (Yükseliş başlangıcı)
-        - MA5 > MA20 → +7 (Erken toparlanma)
-        - MA5 < MA10 < MA20 → -10 (Düşüş)
-
-        **✅ Düzeltilen Sorunlar:**
-        - LOOKBACK 260, MIN_HISTORY 220 (MA200 için yeterli)
-        - Bonuslar elif ile düzeltildi
-        - Perf_Skor → Final_Score
-        - BB breakout 0.80'e yükseltildi
-        - Başarı metriği Risk/Getiri (RR>2)
-        - MA50/200 filtre olarak kullanılıyor
-
-        **⚡ Hız:** ~15-20 saniye (100 hisse)
+        **⚡ Hız:**
+        - Sinyal taraması: ~10-15 saniye (100 hisse)
+        - Performans analizi: Sadece ileri veri varsa
         """)
 
 if __name__ == "__main__":
