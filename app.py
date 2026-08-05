@@ -124,14 +124,14 @@ st.markdown("""<style>
     .signal-event { background-color: #3498db; color: white; padding: 2px 8px; border-radius: 12px; }
 </style>""", unsafe_allow_html=True)
 
-# ===================== SABİTLER (OPTİMİZE) =====================
-LOOKBACK = 150
-MIN_HISTORY = 120
-STEPS = [5,10,15,30,60,90]
-FORWARD_DAYS = 90
-MIN_FORWARD_DAYS = 5
+# ===================== SABİTLER (OPTİMİZE - KAPANIŞ VERİSİ) =====================
+LOOKBACK = 150              # 150 işlem günü
+MIN_HISTORY = 120           # Minimum veri gereksinimi
+STEPS = [5, 10, 15, 30, 60, 90]
+FORWARD_DAYS = 60           # 60 gün ileri veri
+MIN_FORWARD_DAYS = 5        # En az 5 gün ileri veri olmalı
 SIGNAL_COOLDOWN = 10
-CACHE_TTL = 300
+CACHE_TTL = 86400           # 24 SAAT (Kapanış verileri için)
 
 cpu = os.cpu_count() or 4
 WORKERS = min(16, cpu * 3)
@@ -1297,6 +1297,7 @@ def main():
         - Sinyal için: **Sadece geçmiş veri** (hızlı)
         - Performans için: **İleri veri** (opsiyonel)
         - Eğer tarih bugüne 5 günden yakınsa → **ileri veri çekilmez**
+        - Cache süresi: **24 saat** (kapanış verileri için)
 
         **📈 MA Kullanımı:**
         | MA | Kullanım Amacı |
@@ -1308,8 +1309,8 @@ def main():
         | **MA200** | Uzun vadeli filtre |
 
         **⚡ Hız:**
-        - Sinyal taraması: ~10-15 saniye (100 hisse)
-        - Performans analizi: Sadece ileri veri varsa
+        - İlk tarama: ~15-20 saniye (100 hisse)
+        - Sonraki taramalar (24 saat içinde): **~2-3 saniye** (cache'den okur)
         """)
 
 if __name__ == "__main__":
