@@ -12,13 +12,14 @@ import plotly.graph_objects as go
 import os
 import uuid
 from collections import defaultdict
+import numpy as np
 
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.1", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.2", page_icon="🎯", layout="wide")
 
 # ===================== TEST MODU =====================
-TEST_MODE = True  # <-- BUNU TRUE YAPIN
+TEST_MODE = True  # Test modu aktif - ADMIN/Elma* ile giriş
 
 # ===================== TÜRKÇE TARİH SEÇİCİ =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
@@ -85,7 +86,7 @@ def check_password():
     </style>""", unsafe_allow_html=True)
     
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("### 🎯 BIST Sinyal Olayı Backtest Motoru V2.1")
+    st.markdown("### 🎯 BIST Sinyal Olayı Backtest Motoru V2.2")
     st.markdown("#### Yetkili Giriş")
     
     msg = st.empty()
@@ -137,42 +138,58 @@ CACHE_TTL = 300
 cpu = os.cpu_count() or 4
 WORKERS = min(12, cpu * 2)
 
-# ===================== STRATEJİ PRESETLERİ =====================
+# ===================== STRATEJİ PRESETLERİ (GÜNCELLENDİ - V2.2) =====================
 STRATEGY_PRESETS = {
-    "🎯 Erken Trend Avcısı V2.1": {
+    "🎯 Erken Trend Avcısı V2.2 (Optimize)": {
         'base_filters': {
-            'RSI_max': 75, 'RSI_min': 20,
-            'MA200_diff_min': -40, 'MA200_diff_max': 60,
-            'ADX_min': 10,
-            'Volume_MA_ratio': 0.3,
-            'MFI_max': 80, 'MFI_min': 20,
-            'Stochastic_max': 85, 'Stochastic_min': 5,
-            'BB_Position_min': 0.02, 'BB_Position_max': 0.85,
-            'CMF_min': -0.05,
+            'RSI_max': 55, 'RSI_min': 38,
+            'MA200_diff_min': -30, 'MA200_diff_max': 30,
+            'ADX_min': 18,
+            'Volume_MA_ratio': 0.6,
+            'MFI_max': 65, 'MFI_min': 35,
+            'Stochastic_max': 45, 'Stochastic_min': 5,
+            'BB_Position_min': 0.05, 'BB_Position_max': 0.45,
+            'CMF_min': 0.0,
         },
         'profiles': {
-            'Erken': {'Min_Perf_Score': 40, 'Max_ADX': 28},
-            'Orta': {'Min_Perf_Score': 50, 'Max_RSI': 62, 'Min_ADX': 12, 'Max_ADX': 32},
-            'Sıkı': {'Min_Perf_Score': 60, 'Max_RSI': 58, 'Min_RSI': 30, 
-                     'Min_ADX': 15, 'Max_ADX': 35, 'Min_Volume_MA': 0.5}
+            'Erken': {'Min_Perf_Score': 50},
+            'Orta': {'Min_Perf_Score': 60, 'Max_RSI': 50, 'Min_ADX': 20},
+            'Sıkı': {'Min_Perf_Score': 70, 'Max_RSI': 48, 'Min_RSI': 40, 
+                     'Min_ADX': 22, 'Max_ADX': 35}
         },
-        'desc': '🎯 V2.1: Sinyal olayı tabanlı backtest motoru (Final)'
+        'desc': '🎯 V2.2: Eski başarılı sinyalleri (ASELS, KUYAS, GRTHO) yakalamak için optimize edildi'
     },
     "📊 Dengeli V2.1": {
         'base_filters': {
-            'RSI_max': 75, 'RSI_min': 25,
-            'MA200_diff_min': -35, 'MA200_diff_max': 70,
+            'RSI_max': 65, 'RSI_min': 30,
+            'MA200_diff_min': -35, 'MA200_diff_max': 50,
+            'ADX_min': 15,
+            'Volume_MA_ratio': 0.5,
+            'MFI_max': 70, 'MFI_min': 30,
+            'Stochastic_max': 60, 'Stochastic_min': 5,
+            'BB_Position_min': 0.03, 'BB_Position_max': 0.60,
+            'CMF_min': -0.02,
+        },
+        'profiles': {
+            'Dengeli': {'Min_Perf_Score': 45, 'Max_RSI': 58, 'Min_ADX': 17}
+        },
+        'desc': '📊 Erken ve orta seviye sinyallerin dengeli karışımı'
+    },
+    "🚀 Agresif (Çok Erken)": {
+        'base_filters': {
+            'RSI_max': 70, 'RSI_min': 25,
+            'MA200_diff_min': -45, 'MA200_diff_max': 70,
             'ADX_min': 12,
             'Volume_MA_ratio': 0.4,
             'MFI_max': 75, 'MFI_min': 25,
-            'Stochastic_max': 80, 'Stochastic_min': 5,
-            'BB_Position_min': 0.03, 'BB_Position_max': 0.80,
-            'CMF_min': -0.05,
+            'Stochastic_max': 70, 'Stochastic_min': 3,
+            'BB_Position_min': 0.02, 'BB_Position_max': 0.70,
+            'CMF_min': -0.03,
         },
         'profiles': {
-            'Dengeli': {'Min_Perf_Score': 45, 'Max_RSI': 65, 'Min_ADX': 14, 'Max_ADX': 35}
+            'Agresif': {'Min_Perf_Score': 40}
         },
-        'desc': '📊 Erken ve orta seviye sinyallerin dengeli karışımı'
+        'desc': '🚀 Daha fazla sinyal, daha geniş filtreler (daha fazla yanlış pozitif riski)'
     }
 }
 
@@ -270,7 +287,6 @@ def get_data(symbol, date_str):
         ref = pd.to_datetime(date_str)
         today = datetime.now().date()
         
-        # Eğer tarih bugünden büyükse bugünü kullan
         if ref.date() > today:
             ref = pd.Timestamp(today)
         
@@ -593,7 +609,7 @@ def calculate_signal_score(df, idx, weights, symbol=None, index_df=None, date_in
     money_score = money_flow_score_early(row)
     money_norm = (money_score / 15) * 100
     
-    # 3. Momentum (20%)
+    # 3. Momentum (15%) - AZALTILDI
     momentum_score = 0
     if 'ADX_Slope3' in row.index and not pd.isna(row['ADX_Slope3']):
         momentum_score += row['ADX_Slope3'] * 2
@@ -615,7 +631,7 @@ def calculate_signal_score(df, idx, weights, symbol=None, index_df=None, date_in
     breakout_score = consolidation_breakout_score_early(df, idx)
     breakout_norm = (breakout_score / 30) * 100
     
-    # 5. Relative Strength (10%)
+    # 5. Relative Strength (15%) - ARTIRILDI
     rs_score = 0
     if index_df is not None and date_index_map is not None and idx >= 20:
         try:
@@ -748,7 +764,7 @@ def check_signal(df, i, base_filters):
             return False
         
         cmf = df['CMF'].iloc[i]
-        if pd.isna(cmf) or cmf < base_filters.get('CMF_min', -0.05):
+        if pd.isna(cmf) or cmf < base_filters.get('CMF_min', 0):
             return False
         
         return True
@@ -790,7 +806,7 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
         ref = pd.to_datetime(ref_date).normalize()
         dates = df['Date'].dt.normalize()
         
-        # ===== KRİTİK: <= kullan (seçilen tarih dahil) =====
+        # KRİTİK: <= kullan (seçilen tarih dahil)
         valid = np.where(dates <= ref)[0]
         if len(valid) == 0:
             return None
@@ -983,7 +999,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "🎯 Erken Trend Avcısı V2.1",
+        "strategy_preset": "🎯 Erken Trend Avcısı V2.2 (Optimize)",
         "df": None, "ok": False, "t": 0, "days": 0,
         "min_final_score": 40,
         "signal_history": defaultdict(dict)
@@ -993,7 +1009,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">🎯 BIST SİNYAL OLAYI BACKTEST MOTORU V2.1</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">🎯 BIST SİNYAL OLAYI BACKTEST MOTORU V2.2</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -1013,28 +1029,197 @@ def main():
         strategy = STRATEGY_PRESETS[preset]
         base_filters = strategy['base_filters']
         
+        st.markdown("---")
+        st.markdown("### 🔍 TEMEL FİLTRELER")
+        st.caption("⚠️ **Açıklama:** Hangi değerleri artırıp azaltmanın ne anlama geldiği")
+        
+        # RSI
+        col1, col2 = st.columns(2)
+        with col1:
+            rsi_min = st.number_input(
+                "RSI Min",
+                min_value=0, max_value=100, 
+                value=base_filters['RSI_min'],
+                step=1,
+                help="📈 **Artırırsanız:** Daha az sinyal, daha güçlü trend\n"
+                     "📉 **Azaltırsanız:** Daha fazla sinyal, daha erken\n"
+                     "🎯 **Hedef:** 38-42 (aşırı satım bölgesinden çıkış)"
+            )
+        with col2:
+            rsi_max = st.number_input(
+                "RSI Max",
+                min_value=0, max_value=100,
+                value=base_filters['RSI_max'],
+                step=1,
+                help="📈 **Artırırsanız:** Daha fazla sinyal, trend devam edenler\n"
+                     "📉 **Azaltırsanız:** Daha az sinyal, henüz hareket başlamamış\n"
+                     "🎯 **Hedef:** 50-55 (erken trend)"
+            )
+        
+        # ADX
+        adx_min = st.number_input(
+            "ADX Min",
+            min_value=0, max_value=50,
+            value=base_filters['ADX_min'],
+            step=1,
+            help="📈 **Artırırsanız:** Daha az sinyal, daha güçlü trend\n"
+                 "📉 **Azaltırsanız:** Daha fazla sinyal, daha erken\n"
+                 "🎯 **Hedef:** 18-22 (trend başlangıcı)"
+        )
+        
+        # VolRatio
+        vol_min = st.number_input(
+            "Min Volume (VolRatio)",
+            min_value=0.0, max_value=3.0,
+            value=base_filters['Volume_MA_ratio'],
+            step=0.05,
+            format="%.2f",
+            help="📈 **Artırırsanız:** Sadece yüksek hacimli hisseler\n"
+                 "📉 **Azaltırsanız:** Düşük hacimli hisseler de dahil\n"
+                 "🎯 **Hedef:** 0.6-0.8 (normal hacim)"
+        )
+        
+        # Stochastic
+        col1, col2 = st.columns(2)
+        with col1:
+            stoch_min = st.number_input(
+                "Stochastic Min",
+                min_value=0, max_value=100,
+                value=base_filters['Stochastic_min'],
+                step=1,
+                help="📈 **Artırırsanız:** Daha az sinyal\n"
+                     "📉 **Azaltırsanız:** Daha fazla sinyal\n"
+                     "🎯 **Hedef:** 5-10 (dip bölge)"
+            )
+        with col2:
+            stoch_max = st.number_input(
+                "Stochastic Max",
+                min_value=0, max_value=100,
+                value=base_filters['Stochastic_max'],
+                step=1,
+                help="📈 **Artırırsanız:** Daha fazla sinyal (hareket başlamış)\n"
+                     "📉 **Azaltırsanız:** Daha az sinyal (henüz başlamamış)\n"
+                     "🎯 **Hedef:** 35-45 (erken hareket)"
+            )
+        
+        # BB_Position
+        col1, col2 = st.columns(2)
+        with col1:
+            bb_min = st.number_input(
+                "BB Position Min",
+                min_value=0.0, max_value=1.0,
+                value=base_filters['BB_Position_min'],
+                step=0.01,
+                format="%.2f",
+                help="📈 **Artırırsanız:** Daha az sinyal\n"
+                     "📉 **Azaltırsanız:** Daha fazla sinyal\n"
+                     "🎯 **Hedef:** 0.05-0.10 (dip bölge)"
+            )
+        with col2:
+            bb_max = st.number_input(
+                "BB Position Max",
+                min_value=0.0, max_value=1.0,
+                value=base_filters['BB_Position_max'],
+                step=0.01,
+                format="%.2f",
+                help="📈 **Artırırsanız:** Daha fazla sinyal (hareket başlamış)\n"
+                     "📉 **Azaltırsanız:** Daha az sinyal (henüz başlamamış)\n"
+                     "🎯 **Hedef:** 0.35-0.45 (hareket başlangıcı)"
+            )
+        
+        # CMF
+        cmf_min = st.number_input(
+            "CMF Min",
+            min_value=-0.5, max_value=0.5,
+            value=base_filters.get('CMF_min', 0.0),
+            step=0.01,
+            format="%.2f",
+            help="📈 **Artırırsanız:** Sadece pozitif para akışı\n"
+                 "📉 **Azaltırsanız:** Negatif para akışı da dahil\n"
+                 "🎯 **Hedef:** 0.0 (para akışı dönüşü)"
+        )
+        
+        # MA200
+        col1, col2 = st.columns(2)
+        with col1:
+            ma200_min = st.number_input(
+                "MA200 Mesafe Min %",
+                min_value=-100, max_value=0,
+                value=base_filters['MA200_diff_min'],
+                step=1,
+                help="📈 **Artırırsanız:** Daha az sinyal (fiyat MA200'den uzak)\n"
+                     "📉 **Azaltırsanız:** Daha fazla sinyal\n"
+                     "🎯 **Hedef:** -30 (MA200'den çok uzak değil)"
+            )
+        with col2:
+            ma200_max = st.number_input(
+                "MA200 Mesafe Max %",
+                min_value=0, max_value=200,
+                value=base_filters['MA200_diff_max'],
+                step=1,
+                help="📈 **Artırırsanız:** Daha fazla sinyal (fiyat MA200 üzerinde)\n"
+                     "📉 **Azaltırsanız:** Daha az sinyal\n"
+                     "🎯 **Hedef:** 30 (MA200'den çok uzak değil)"
+            )
+        
+        st.markdown("---")
+        st.markdown("### 📊 PROFİL FİLTRELERİ")
+        st.caption("⚠️ **Açıklama:** Bu filtreler ana filtrelerden sonra uygulanır")
+        
         profile_names = list(strategy['profiles'].keys())
         selected_profile = st.selectbox("📊 Filtre Profili", ["Hiçbiri"] + profile_names)
-        
         profile = strategy['profiles'].get(selected_profile) if selected_profile != "Hiçbiri" else None
         
-        st.caption(strategy['desc'])
-        st.caption(f"Temel filtreler: RSI {base_filters['RSI_min']}-{base_filters['RSI_max']}, "
-                  f"ADX >{base_filters['ADX_min']}, CMF >{base_filters.get('CMF_min', -0.05)}")
+        if profile:
+            st.caption("📌 **Mevcut Profil:** " + selected_profile)
+            for key, value in profile.items():
+                st.caption(f"  • {key}: {value}")
         
         st.markdown("---")
         st.markdown("### 🎯 PUANLAMA AĞIRLIKLARI")
+        st.caption("⚠️ **Açıklama:** Hangi faktöre ne kadar önem verileceği")
         
         col1, col2 = st.columns(2)
         with col1:
-            w_trend = st.slider("Trend Quality", 0.0, 1.0, 0.25, 0.05, key="w_trend")
-            w_money = st.slider("Money Flow", 0.0, 1.0, 0.20, 0.05, key="w_money")
-            w_momentum = st.slider("Momentum", 0.0, 1.0, 0.20, 0.05, key="w_mom")
+            w_trend = st.slider(
+                "Trend Quality", 0.0, 1.0, 0.25, 0.05,
+                help="📈 **Artırırsanız:** Trend devam eden hisseler öne çıkar\n"
+                     "📉 **Azaltırsanız:** Erken sinyaller öne çıkar\n"
+                     "🎯 **Hedef:** 20-30%"
+            )
+            w_money = st.slider(
+                "Money Flow", 0.0, 1.0, 0.20, 0.05,
+                help="📈 **Artırırsanız:** Para girişi olan hisseler öne çıkar\n"
+                     "📉 **Azaltırsanız:** Para akışı daha az önemli\n"
+                     "🎯 **Hedef:** 15-25%"
+            )
+            w_momentum = st.slider(
+                "Momentum", 0.0, 1.0, 0.15, 0.05,
+                help="📈 **Artırırsanız:** Hızlanan hisseler öne çıkar\n"
+                     "📉 **Azaltırsanız:** Daha yavaş hareket eden hisseler\n"
+                     "🎯 **Hedef:** 10-20% (çok yüksek olursa erken sinyalleri kaçırır)"
+            )
         with col2:
-            w_breakout = st.slider("Breakout", 0.0, 1.0, 0.15, 0.05, key="w_breakout")
-            w_rs = st.slider("RS", 0.0, 1.0, 0.10, 0.05, key="w_rs")
-            w_risk = st.slider("Risk Filter", 0.0, 1.0, 0.10, 0.05, key="w_risk")
+            w_breakout = st.slider(
+                "Breakout", 0.0, 1.0, 0.15, 0.05,
+                help="📈 **Artırırsanız:** Sıkışma kıran hisseler öne çıkar\n"
+                     "📉 **Azaltırsanız:** Sıkışma daha az önemli\n"
+                     "🎯 **Hedef:** 10-20%"
+            )
+            w_rs = st.slider(
+                "Relative Strength", 0.0, 1.0, 0.15, 0.05,
+                help="📈 **Artırırsanız:** Endeks'ten güçlü hisseler öne çıkar\n"
+                     "📉 **Azaltırsanız:** Endeks performansı daha az önemli\n"
+                     "🎯 **Hedef:** 10-20%"
+            )
+            w_risk = st.slider(
+                "Risk Filter", 0.0, 1.0, 0.10, 0.05,
+                help="📈 **Artırırsanız:** Düşük riskli hisseler öne çıkar\n"
+                     "📉 **Azaltırsanız:** Yüksek riskli hisseler de dahil\n"
+                     "🎯 **Hedef:** 5-15%"
+            )
         
+        # Ağırlıkları normalize et
         total_w = w_trend + w_money + w_momentum + w_breakout + w_rs + w_risk
         if total_w > 0:
             weights = {
@@ -1046,10 +1231,11 @@ def main():
                 'w_risk': w_risk/total_w
             }
         else:
-            weights = {'w_trend': 0.25, 'w_money': 0.20, 'w_momentum': 0.20, 
-                      'w_breakout': 0.15, 'w_rs': 0.10, 'w_risk': 0.10}
+            weights = {'w_trend': 0.25, 'w_money': 0.20, 'w_momentum': 0.15, 
+                      'w_breakout': 0.15, 'w_rs': 0.15, 'w_risk': 0.10}
         
-        st.caption(f"📊 Mevcut ağırlıklar: "
+        # Mevcut ağırlıkları göster
+        st.caption(f"📊 **Mevcut ağırlıklar:** "
                   f"Trend {weights['w_trend']*100:.0f}% | "
                   f"Money {weights['w_money']*100:.0f}% | "
                   f"Momentum {weights['w_momentum']*100:.0f}% | "
@@ -1128,7 +1314,7 @@ def main():
             except:
                 pass
         
-        with st.spinner(f'🔍 {days} gün taranıyor... (Kapanış Sinyali)'):
+        with st.spinner(f'🔍 {days} gün taranıyor... (V2.2 Optimize)'):
             all_signals = []
             signal_history = st.session_state.signal_history
             bar = st.progress(0)
@@ -1189,9 +1375,9 @@ def main():
         success_df = df[df['Is_Successful'].notna()]
         if len(success_df) > 0:
             success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
-            with c4: st.metric("✅ Başarı", f"%{success_rate:.0f}")
+            with c4: st.metric("✅ Başarı (10G Max>8%, DD<5%)", f"%{success_rate:.0f}")
         else:
-            with c4: st.metric("✅ Başarı", "Veri Yok")
+            with c4: st.metric("✅ Başarı Oranı", "Veri Yok")
         
         r30 = df['+30G_Getiri%'].dropna()
         with c5:
@@ -1200,7 +1386,16 @@ def main():
             else:
                 st.metric("📈 30G Ort. Getiri", "Veri Yok")
         
-        # ===== TEKRAR SİNYAL ANALİZİ (DÜZELTİLDİ) =====
+        st.markdown("### 📊 Sinyal Performans Analizi")
+        
+        df['Score_Group'] = pd.cut(df['Final_Score'], bins=[0, 45, 55, 65, 75, 100], 
+                                   labels=['0-45', '45-55', '55-65', '65-75', '75+'])
+        
+        perf_by_score = df.groupby('Score_Group')['+30G_Getiri%'].agg(['count', 'mean', 'std']).round(2)
+        perf_by_score.columns = ['Sinyal Sayısı', 'Ort. Getiri %', 'Std']
+        st.dataframe(perf_by_score, use_container_width=True)
+        
+        # ===== TEKRAR SİNYAL ANALİZİ =====
         st.markdown("### 🔄 Tekrar Sinyal Veren Hisseler")
         
         repeat_df = df.groupby('Hisse').agg(
@@ -1212,7 +1407,7 @@ def main():
             Ort_DD=('Max_DD_30G', 'mean')
         ).reset_index()
         
-        # DÜZELTİLDİ: Sıfıra bölme kontrolü
+        # Sıfıra bölme kontrolü
         repeat_df['Başarı_Oranı'] = repeat_df.apply(
             lambda row: (row['Basari'] / row['Test'] * 100).round(1) if row['Test'] > 0 else 0,
             axis=1
@@ -1274,24 +1469,24 @@ def main():
             )
     
     elif not btn:
-        st.markdown("### 🎯 Sinyal Olayı Backtest Motoru V2.1")
+        st.markdown("### 🎯 Sinyal Olayı Backtest Motoru V2.2 (Optimize)")
         st.markdown("""
-        **Event-Based Signal Backtest Engine:**
+        **Event-Based Signal Backtest Engine - Optimize Sürüm:**
 
-        **📌 Sinyal Zamanlama Mantığı:**
+        **📌 KRİTİK: Sinyal Zamanlama Mantığı**
         - **Signal_Date:** Sinyalin oluştuğu kapanış günü
         - **Entry_Price:** Signal_Date kapanış fiyatı
         - **Amaç:** Signal_Date sonrası (ertesi işlem günü) işlem planı
 
-        **🔧 Özellikler:**
-        - ✅ Bağımsız sinyal kayıtları
-        - ✅ Look-ahead bias koruması
-        - ✅ Önceden veri yükleme
-        - ✅ Cooldown sistemi
-        - ✅ Portföy metrikleri
+        **🎯 V2.2 Optimizasyonları:**
+        - ✅ **ADX eşiği 18'e yükseltildi** (daha güçlü trend başlangıcı)
+        - ✅ **RSI aralığı daraltıldı** (38-55)
+        - ✅ **Stochastic Max 45'e düşürüldü** (aşırı satım bölgesi)
+        - ✅ **BB_Position Max 0.45'e düşürüldü** (dip bölge)
+        - ✅ **Momentum ağırlığı 15%'e düşürüldü** (erken sinyalleri korumak için)
+        - ✅ **RS ağırlığı 15%'e yükseltildi** (endeksten güçlü olanları öne çıkarmak için)
 
-        **📊 Başarı Metriği:**
-        - **Başarılı = +10G Max Getiri > 8% ve Max DD < 5%**
+        **📊 V2.2 Hedefi:** ASELS, KUYAS, GRTHO, ENERGY, BRYAT gibi başarılı sinyalleri yakalamak
         """)
 
 if __name__ == "__main__":
