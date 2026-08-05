@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.1", page_icon="🎯", layout="wide")
 
 # ===================== TEST MODU =====================
-TEST_MODE = False
+TEST_MODE = True
 
 # ===================== TÜRKÇE TARİH SEÇİCİ =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
