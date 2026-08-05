@@ -15,7 +15,7 @@ from collections import defaultdict
 
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.3 Hızlı", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.4", page_icon="⚡", layout="wide")
 
 # ===================== TEST MODU =====================
 TEST_MODE = True
@@ -84,7 +84,7 @@ def check_password():
     </style>""", unsafe_allow_html=True)
     
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("### ⚡ BIST Sinyal Olayı Backtest Motoru V2.3 Hızlı")
+    st.markdown("### ⚡ BIST Sinyal Olayı Backtest Motoru V2.4")
     st.markdown("#### Yetkili Giriş")
     
     msg = st.empty()
@@ -124,7 +124,7 @@ st.markdown("""<style>
     .signal-event { background-color: #3498db; color: white; padding: 2px 8px; border-radius: 12px; }
 </style>""", unsafe_allow_html=True)
 
-# ===================== SABİTLER (OPTİMİZE - KAPANIŞ VERİSİ) =====================
+# ===================== SABİTLER (OPTİMİZE - V2.4) =====================
 LOOKBACK = 150
 MIN_HISTORY = 120
 STEPS = [5, 10, 15, 30, 60, 90]
@@ -136,8 +136,27 @@ CACHE_TTL = 86400  # 24 SAAT
 cpu = os.cpu_count() or 4
 WORKERS = min(16, cpu * 3)
 
-# ===================== STRATEJİ PRESETLERİ =====================
+# ===================== STRATEJİ PRESETLERİ (V2.4 - OPTİMİZE) =====================
 STRATEGY_PRESETS = {
+    "⚡ Optimize V2.4 (Veri Odaklı)": {
+        'base_filters': {
+            'RSI_max': 60, 'RSI_min': 30,
+            'MA200_diff_min': -30, 'MA200_diff_max': 40,
+            'ADX_min': 14,
+            'Volume_MA_ratio': 0.4,
+            'MFI_max': 70, 'MFI_min': 30,
+            'Stochastic_max': 65, 'Stochastic_min': 5,
+            'BB_Position_min': 0.03, 'BB_Position_max': 0.65,
+            'CMF_min': -0.02,
+        },
+        'profiles': {
+            'Erken': {'Min_Final_Score': 50, 'Min_ADX': 12},
+            'Orta': {'Min_Final_Score': 60, 'Max_RSI': 55, 'Min_ADX': 16},
+            'Sıkı': {'Min_Final_Score': 70, 'Max_RSI': 50, 'Min_RSI': 35, 
+                     'Min_ADX': 20, 'Max_ADX': 35}
+        },
+        'desc': '⚡ Haziran 2025 verilerine göre optimize edildi'
+    },
     "⚡ Hızlı Momentum & Breakout V2.3": {
         'base_filters': {
             'RSI_max': 65, 'RSI_min': 25,
@@ -156,22 +175,6 @@ STRATEGY_PRESETS = {
                      'Min_ADX': 18, 'Max_ADX': 35}
         },
         'desc': '⚡ Hızlı versiyon: Momentum & Breakout odaklı'
-    },
-    "📊 Hızlı Dengeli": {
-        'base_filters': {
-            'RSI_max': 65, 'RSI_min': 30,
-            'MA200_diff_min': -35, 'MA200_diff_max': 50,
-            'ADX_min': 12,
-            'Volume_MA_ratio': 0.4,
-            'MFI_max': 70, 'MFI_min': 30,
-            'Stochastic_max': 65, 'Stochastic_min': 5,
-            'BB_Position_min': 0.03, 'BB_Position_max': 0.65,
-            'CMF_min': -0.03,
-        },
-        'profiles': {
-            'Dengeli': {'Min_Final_Score': 45, 'Max_RSI': 58, 'Min_ADX': 15}
-        },
-        'desc': '📊 Dengeli yaklaşım'
     },
     "🔬 Hızlı Test": {
         'base_filters': {
@@ -392,8 +395,9 @@ def calc_indicators_fast(df):
     
     return clean_df
 
-# ===================== SKORLAMA =====================
-def score_stock_v23_fast(r):
+# ===================== SKORLAMA (V2.4 - OPTİMİZE) =====================
+def score_stock_v24_optimize(r):
+    """V2.4 - Optimize skorlama (Haziran 2025 verilerine göre)"""
     s = 0
     adx = r.get('ADX', 20)
     rsi = r.get('RSI', 50)
@@ -403,7 +407,7 @@ def score_stock_v23_fast(r):
     bb = r.get('BB_Position', 0.5)
     ma200_dist = r.get('MA200_Mesafe%', 0)
     
-    # TREND YÖNÜ
+    # ===== TREND YÖNÜ SKORU (SADECE MA5-MA10-MA20) =====
     ma5 = r.get('MA5', 0)
     ma10 = r.get('MA10', 0)
     ma20 = r.get('MA20', 0)
@@ -412,43 +416,58 @@ def score_stock_v23_fast(r):
     ma200_val = r.get('MA200', 0)
     
     trend_score = 0
+    
+    # Güçlü yükseliş
     if ma5 > ma10 > ma20:
         trend_score = 15
+    # Yükseliş başlangıcı
     elif ma5 > ma10 and ma10 <= ma20:
         trend_score = 10
+    # Erken toparlanma
     elif ma5 > ma20:
         trend_score = 7
+    # Yatay
     elif abs(ma5 - ma10) / (ma10 + 0.001) < 0.003:
         trend_score = 3
+    # Düşüş - CEZALANDIR
     elif ma5 < ma10 < ma20:
         trend_score = -10
     else:
         trend_score = 0
+    
     s += trend_score
     
-    # MA50/200 FİLTRE/BONUS
+    # ===== MA50 VE MA200 FİLTRE/BONUS =====
+    # MA50 üzerinde
     if close > ma50:
         s += 3
+    
+    # MA200 üzerinde
     if close > ma200_val:
         s += 5
+    
+    # MA200 mesafesi
     if 0 <= ma200_dist <= 10:
         s += 4
     elif ma200_dist > 40:
         s -= 4
     
-    # ANA KATMANLAR
+    # ===== ANA KATMANLAR (YENİ AĞIRLIKLAR) =====
+    # Trend Quality (10% - DÜŞÜRÜLDÜ)
     if 16 <= adx <= 22: s += 10
     elif 22 < adx <= 28: s += 8
     elif 28 < adx <= 35: s += 5
     elif 12 <= adx < 16: s += 7
     else: s += 0
     
+    # Money Flow (15% - AYNI)
     if 45 <= rsi <= 58: s += 10
     elif 40 <= rsi < 45 or 58 < rsi <= 65: s += 7
     else: s += 0
     if cmf > 0.05: s += 5
     elif cmf > 0: s += 3
     
+    # Momentum (15% - DÜŞÜRÜLDÜ: 25 → 15)
     mom_score = 0
     if 'ADX_Slope3' in r and not pd.isna(r.get('ADX_Slope3', 0)):
         mom_score += r['ADX_Slope3'] * 2
@@ -458,46 +477,63 @@ def score_stock_v23_fast(r):
         mom_score += r['RSI_Slope3'] * 1.5
     if 'VolRatio_Slope3' in r and not pd.isna(r.get('VolRatio_Slope3', 0)):
         mom_score += r['VolRatio_Slope3'] * 1.5
+    
     mom_score = max(-30, min(30, mom_score))
     mom_norm = max(0, min(100, (mom_score / 30) * 50 + 50))
-    s += mom_norm * 0.25
+    s += mom_norm * 0.15  # 25 → 15
     
+    # Breakout (25% - ARTIRILDI: 20 → 25)
     br_score = 0
     if bb > 0.80: br_score += 12
     elif bb > 0.65: br_score += 8
     elif bb > 0.50: br_score += 5
     elif bb > 0.35: br_score += 3
+    
     if stoch > 60: br_score += 8
     elif stoch > 40: br_score += 5
     elif stoch > 20: br_score += 3
+    
     if vol > 1.0: br_score += 7
     elif vol > 0.7: br_score += 4
+    
     s += br_score
     
+    # Relative Strength (15% - AYNI)
     rs_score = r.get('RS_Score', 0)
     s += rs_score * 0.75
     
-    # BONUSLAR
+    # ===== BONUSLAR =====
     if adx > 35:
         s += 8
     elif adx > 25:
         s += 5
+    
     if vol > 1.2:
         s += 4
+    
     if cmf > 0.10:
         s += 3
+    
     if stoch < 30 and r.get('Stochastic_Slope3', 0) > 0:
         s += 4
+    
     if 0.45 <= bb <= 0.65:
         s += 3
     
-    # CEZALAR
+    # ===== CEZALAR =====
     penalty = 0
     if stoch > 85 and bb > 0.85: penalty += 3
     if rsi > 75: penalty += 2
     if ma200_dist > 50: penalty += 3
     if vol < 0.5: penalty += 2
     if cmf < -0.10: penalty += 2
+    
+    # ===== V2.4 YENİ CEZALAR =====
+    # Aşırı yüksek skor için ek kontrol (90+ sorunu)
+    if adx < 18 and rsi > 55:
+        penalty += 3
+    if vol < 0.6 and bb > 0.65:
+        penalty += 3
     
     final_score = max(0, min(100, s - penalty))
     
@@ -514,9 +550,10 @@ def score_stock_v23_fast(r):
         'Final_Score': final_score
     }
 
-def calculate_signal_score_v23_fast(df, idx, symbol=None, index_df=None, date_index_map=None, min_final_score=40):
+def calculate_signal_score_v24_optimize(df, idx, symbol=None, index_df=None, date_index_map=None, min_final_score=40):
     row = df.iloc[idx]
     
+    # RS Score hesapla
     rs_score = 0
     if index_df is not None and date_index_map is not None and idx >= 20:
         try:
@@ -548,6 +585,7 @@ def calculate_signal_score_v23_fast(df, idx, symbol=None, index_df=None, date_in
         except:
             pass
     
+    # Skor verilerini hazırla
     score_data = {
         'ADX': row.get('ADX', 20),
         'RSI': row.get('RSI', 50),
@@ -570,7 +608,11 @@ def calculate_signal_score_v23_fast(df, idx, symbol=None, index_df=None, date_in
         'Close': row.get('Close', 0),
     }
     
-    scores = score_stock_v23_fast(score_data)
+    scores = score_stock_v24_optimize(score_data)
+    
+    # V2.4: Trend Score negatif olanları ele (başarısız sinyallerin %78'i)
+    if scores['Trend_Score'] < 0:
+        return None
     
     if scores['Final_Score'] < min_final_score:
         return None
@@ -611,7 +653,7 @@ def check_signal_fast(df, i, base_filters):
             return False
         
         cmf = df['CMF'].iloc[i]
-        if pd.isna(cmf) or cmf < base_filters.get('CMF_min', -0.05):
+        if pd.isna(cmf) or cmf < base_filters.get('CMF_min', -0.02):
             return False
         
         return True
@@ -688,7 +730,7 @@ def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None,
         clean_symbol = sym.replace(".IS", "")
         signal_id = f"{clean_symbol}_{signal_date.strftime('%Y%m%d')}"
         
-        scores = calculate_signal_score_v23_fast(signal_df, signal_idx, sym, index_df, date_index_map, min_final_score)
+        scores = calculate_signal_score_v24_optimize(signal_df, signal_idx, sym, index_df, date_index_map, min_final_score)
         if scores is None:
             return None
         
@@ -853,7 +895,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "⚡ Hızlı Momentum & Breakout V2.3",
+        "strategy_preset": "⚡ Optimize V2.4 (Veri Odaklı)",
         "df": None, "ok": False, "t": 0, "days": 0,
         "min_final_score": 40,
         "signal_history": defaultdict(dict)
@@ -863,7 +905,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">⚡ BIST SİNYAL OLAYI BACKTEST MOTORU V2.3 HIZLI (FİNAL)</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">⚡ BIST SİNYAL OLAYI BACKTEST MOTORU V2.4 (OPTİMİZE)</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -884,11 +926,11 @@ def main():
         base_filters = strategy['base_filters']
         
         st.markdown("---")
-        st.markdown("### 📊 AĞIRLIKLAR (V2.3 Hızlı - Final)")
+        st.markdown("### 📊 AĞIRLIKLAR (V2.4 - Optimize)")
         st.caption("""
-        Trend Yönü (MA5-10-20): +Bonus
-        Trend Kalite: 10% | Money Flow: 15% | Momentum: 25% | Breakout: 20% | RS: 15%
+        Trend Yönü: +Bonus | Trend Kalite: 10% | Money Flow: 15% | Momentum: 15% | Breakout: 25% | RS: 15%
         MA50/200: Filtre + Bonus
+        **YENİ:** Trend Score < 0 otomatik elenir
         """)
         
         st.markdown("---")
@@ -915,7 +957,7 @@ def main():
         with col2:
             bb_max = st.number_input("BB Max", 0.0, 1.0, base_filters['BB_Position_max'], 0.01)
         
-        cmf_min = st.number_input("CMF Min", -0.5, 0.5, base_filters.get('CMF_min', -0.05), 0.01)
+        cmf_min = st.number_input("CMF Min", -0.5, 0.5, base_filters.get('CMF_min', -0.02), 0.01)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -928,8 +970,8 @@ def main():
             'MA200_diff_min': ma200_min, 'MA200_diff_max': ma200_max,
             'ADX_min': adx_min,
             'Volume_MA_ratio': vol_min,
-            'MFI_max': base_filters.get('MFI_max', 75),
-            'MFI_min': base_filters.get('MFI_min', 25),
+            'MFI_max': base_filters.get('MFI_max', 70),
+            'MFI_min': base_filters.get('MFI_min', 30),
             'Stochastic_max': stoch_max, 'Stochastic_min': stoch_min,
             'BB_Position_min': bb_min, 'BB_Position_max': bb_max,
             'CMF_min': cmf_min,
@@ -976,22 +1018,22 @@ def main():
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2026, 7, 1), "tek")
+            d = turkish_date_picker("Tarih Seçin", datetime(2025, 6, 1), "tek")
             start = end = d
             
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
             with c1:
-                start = turkish_date_picker("Başlangıç", datetime(2026, 7, 1), "bas")
+                start = turkish_date_picker("Başlangıç", datetime(2025, 6, 1), "bas")
             with c2:
-                end = turkish_date_picker("Bitiş", datetime(2026, 7, 31), "bit")
+                end = turkish_date_picker("Bitiş", datetime(2025, 6, 30), "bit")
                 
         else:
             c1, c2 = st.columns(2)
             with c1:
-                y = st.selectbox("Yıl", range(2020, 2031), index=6, key="yy")
+                y = st.selectbox("Yıl", range(2020, 2031), index=5, key="yy")
             with c2:
-                m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=6, key="mm")
+                m = st.selectbox("Ay", range(1, 13), format_func=lambda x: TURKISH_MONTHS[x-1], index=5, key="mm")
             start = datetime(y, m, 1).date()
             end = (datetime(y, m+1, 1) if m < 12 else datetime(y+1, 1, 1)).date() - timedelta(days=1)
         
@@ -1035,7 +1077,7 @@ def main():
             except:
                 pass
         
-        with st.spinner(f'⚡ {days} gün taranıyor... (Final V2.3)'):
+        with st.spinner(f'⚡ {days} gün taranıyor... (V2.4 Optimize)'):
             all_signals = []
             signal_history = st.session_state.signal_history
             bar = st.progress(0)
@@ -1097,7 +1139,7 @@ def main():
             success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
             with c4: st.metric("✅ Başarı Oranı (RR>2)", f"%{success_rate:.0f}")
         else:
-            with c4: st.metric("✅ Başarı Oranı", "Veri Yok (ileri veri yok)")
+            with c4: st.metric("✅ Başarı Oranı", "Veri Yok")
         
         r30 = df['+30G_Getiri%'].dropna()
         with c5:
@@ -1175,7 +1217,7 @@ def main():
             )
             st.plotly_chart(fig3, use_container_width=True)
         
-        # ===== TEKRAR SİNYAL ANALİZİ (DÜZELTİLDİ - V2) =====
+        # Tekrar sinyal analizi
         st.markdown("### 🔄 Tekrar Sinyal Veren Hisseler")
         
         repeat_df = df.groupby('Hisse').agg(
@@ -1187,18 +1229,15 @@ def main():
             Ort_DD=('Max_DD_30G', 'mean')
         ).reset_index()
         
-        # DÜZELTİLDİ V2: Güvenli hesaplama
         def calculate_success_rate(row):
             test = row['Test']
             basari = row['Basari']
             
-            # NaN veya None kontrolü
             if pd.isna(test) or pd.isna(basari):
                 return 0.0
             if test == 0:
                 return 0.0
             
-            # Değerleri float'a çevir
             test = float(test)
             basari = float(basari)
             
@@ -1245,7 +1284,7 @@ def main():
             st.download_button(
                 "📊 CSV İndir",
                 csv_data,
-                "sinyal_olaylari_v23_final.csv",
+                "sinyal_olaylari_v24_optimize.csv",
                 "text/csv"
             )
         with c2:
@@ -1256,20 +1295,25 @@ def main():
             st.download_button(
                 "📑 Excel İndir",
                 buf.getvalue(),
-                "sinyal_olaylari_v23_final.xlsx",
+                "sinyal_olaylari_v24_optimize.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     
     elif not btn:
-        st.markdown("### ⚡ Sinyal Olayı Backtest Motoru V2.3 (FİNAL)")
+        st.markdown("### ⚡ Sinyal Olayı Backtest Motoru V2.4 (Optimize)")
         st.markdown("""
-        **Final Sürüm - Optimize Edilmiş Veri Çekme:**
+        **V2.4 Optimize Sürüm - Haziran 2025 Verilerine Göre:**
 
-        **📊 Veri Çekme Mantığı:**
-        - Sinyal için: **Sadece geçmiş veri** (hızlı)
-        - Performans için: **İleri veri** (opsiyonel)
-        - Eğer tarih bugüne 5 günden yakınsa → **ileri veri çekilmez**
-        - Cache süresi: **24 saat** (kapanış verileri için)
+        **📊 Değişiklikler:**
+        | Özellik | Önceki | Yeni |
+        |---------|--------|------|
+        | Momentum Ağırlığı | 25% | **15%** |
+        | Breakout Ağırlığı | 20% | **25%** |
+        | Trend Score < 0 | Dahil | **Otomatik Elenir** |
+        | RSI Aralığı | 25-65 | **30-60** |
+        | ADX Min | 10 | **14** |
+        | CMF Min | -0.05 | **-0.02** |
+        | BB Max | 0.75 | **0.65** |
 
         **📈 MA Kullanımı:**
         | MA | Kullanım Amacı |
@@ -1282,7 +1326,7 @@ def main():
 
         **⚡ Hız:**
         - İlk tarama: ~15-20 saniye (100 hisse)
-        - Sonraki taramalar (24 saat içinde): **~2-3 saniye** (cache'den okur)
+        - Sonraki taramalar (24 saat içinde): **~2-3 saniye**
         """)
 
 if __name__ == "__main__":
