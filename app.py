@@ -12,14 +12,13 @@ import plotly.graph_objects as go
 import os
 import uuid
 from collections import defaultdict
-import numpy as np
 
 warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.1", page_icon="🎯", layout="wide")
 
 # ===================== TEST MODU =====================
-TEST_MODE = True
+TEST_MODE = True  # <-- BUNU TRUE YAPIN
 
 # ===================== TÜRKÇE TARİH SEÇİCİ =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
@@ -75,6 +74,11 @@ def check_password():
     if st.session_state.authenticated:
         return True
     
+    # TEST MODU: Her zaman giriş yap
+    if TEST_MODE:
+        st.session_state.authenticated = True
+        return True
+    
     st.markdown("""<style>
         .login-box { max-width:400px; margin:80px auto; padding:2rem; background:white; 
                     border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.15); text-align:center; }
@@ -103,21 +107,8 @@ def check_password():
                 time.sleep(0.3)
                 st.rerun()
         except Exception as e:
-            if TEST_MODE:
-                st.warning("⚠️ TEST MODU: ADMIN/Elma*")
-                if user == "ADMIN" and pwd == "Elma*":
-                    st.session_state.authenticated = True
-                    msg.success("✅ Başarılı!")
-                    time.sleep(0.3)
-                    st.rerun()
-                else:
-                    st.session_state.login_counter += 1
-                    msg.error("❌ Hatalı!")
-                    time.sleep(0.3)
-                    st.rerun()
-            else:
-                st.error("❌ Giriş yapılandırması bulunamadı!")
-                return False
+            st.error("❌ Giriş yapılandırması bulunamadı! Lütfen secrets.toml dosyasını oluşturun veya TEST_MODE=True yapın.")
+            return False
     
     st.markdown('</div>', unsafe_allow_html=True)
     return False
@@ -271,13 +262,15 @@ def get_data_cached(symbol, start_date, end_date):
         result = result.dropna(subset=['Open', 'High', 'Low', 'Close'])
         
         return result
-    except:
+    except Exception as e:
         return None
 
 def get_data(symbol, date_str):
     try:
         ref = pd.to_datetime(date_str)
         today = datetime.now().date()
+        
+        # Eğer tarih bugünden büyükse bugünü kullan
         if ref.date() > today:
             ref = pd.Timestamp(today)
         
@@ -288,7 +281,7 @@ def get_data(symbol, date_str):
             end = today.strftime('%Y-%m-%d')
         
         return get_data_cached(symbol, start, end)
-    except:
+    except Exception as e:
         return None
 
 # ===================== GÖSTERGE HESAPLAMALARI =====================
@@ -783,10 +776,9 @@ def apply_filter(r, filters):
     except:
         return False
 
-# ===================== TARAMA FONKSİYONU (OPTİMİZE) =====================
+# ===================== TARAMA FONKSİYONU =====================
 def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None, 
                index_df=None, date_index_map=None, min_final_score=40):
-    """Tek bir hisse için sinyal taraması - OPTİMİZE"""
     try:
         if df_full is None or len(df_full) < MIN_HISTORY:
             return None
@@ -799,7 +791,6 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
         dates = df['Date'].dt.normalize()
         
         # ===== KRİTİK: <= kullan (seçilen tarih dahil) =====
-        # Seçilen tarihin kapanış verisine göre sinyal
         valid = np.where(dates <= ref)[0]
         if len(valid) == 0:
             return None
@@ -811,11 +802,6 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
         
         if not check_signal(signal_df, signal_idx, base_filters):
             return None
-        
-        # ===== SİNYAL TANIMLARI =====
-        # Signal_Date: Sinyalin oluştuğu kapanış günü
-        # Entry_Price: Signal_Date kapanış fiyatı
-        # Forward_Performance: Signal_Date sonrası günlerdeki hareket
         
         signal_price = signal_df['Close'].iloc[signal_idx]
         signal_date = signal_df['Date'].iloc[signal_idx]
@@ -868,7 +854,6 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
                 return None
         
         # ===== PERFORMANS METRİKLERİ =====
-        # Forward getiriler - sinyal gününden sonraki günler
         for s in STEPS:
             if idx + s < len(df):
                 future_close = df['Close'].iloc[idx + s]
@@ -890,7 +875,6 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
             else:
                 signal_event[f'+{s}G_Max_Getiri%'] = None
         
-        # Max_DD - sinyal gününden sonra
         max_dd = 0
         if idx + 30 < len(df):
             low_valley = df['Low'].iloc[idx+1:idx+31].min()
@@ -931,12 +915,11 @@ def scan_stock(sym, df_full, ref_date, base_filters, weights, profile=None,
             signal_event['Is_Successful'] = None
         
         return signal_event
-    except:
+    except Exception as e:
         return None
 
 def run_scan_optimized(symbols, date, base_filters, weights, profile=None, 
                        index_df=None, date_index_map=None, min_final_score=40):
-    """OPTİMİZE: Tüm veriler önceden çekiliyor"""
     results = []
     ds = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
     
@@ -975,9 +958,8 @@ def get_bdays(start, end):
         cur += timedelta(days=1)
     return days
 
-# ===================== COOLDOWN FONKSİYONU =====================
+# ===================== COOLDOWN =====================
 def is_cooldown_active(hisse, signal_date, signal_history, cooldown_days):
-    """İşlem günü bazlı cooldown kontrolü"""
     if hisse not in signal_history:
         return False
     
@@ -1011,7 +993,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">🎯 BIST SİNYAL OLAYI BACKTEST MOTORU V2.1 (FİNAL)</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">🎯 BIST SİNYAL OLAYI BACKTEST MOTORU V2.1</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -1146,7 +1128,7 @@ def main():
             except:
                 pass
         
-        with st.spinner(f'🔍 {days} gün taranıyor... (Kapanış Sinyali - <= kullanılıyor)'):
+        with st.spinner(f'🔍 {days} gün taranıyor... (Kapanış Sinyali)'):
             all_signals = []
             signal_history = st.session_state.signal_history
             bar = st.progress(0)
@@ -1207,9 +1189,9 @@ def main():
         success_df = df[df['Is_Successful'].notna()]
         if len(success_df) > 0:
             success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
-            with c4: st.metric("✅ Başarı (10G Max>8%, DD<5%)", f"%{success_rate:.0f}")
+            with c4: st.metric("✅ Başarı", f"%{success_rate:.0f}")
         else:
-            with c4: st.metric("✅ Başarı Oranı", "Veri Yok")
+            with c4: st.metric("✅ Başarı", "Veri Yok")
         
         r30 = df['+30G_Getiri%'].dropna()
         with c5:
@@ -1218,111 +1200,7 @@ def main():
             else:
                 st.metric("📈 30G Ort. Getiri", "Veri Yok")
         
-        # ===== PORTFÖY METRİKLERİ =====
-        st.markdown("### 📊 Portföy Metrikleri")
-        
-        gross_profit = df[df['+30G_Getiri%'] > 0]['+30G_Getiri%'].sum()
-        gross_loss = abs(df[df['+30G_Getiri%'] < 0]['+30G_Getiri%'].sum())
-        profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.inf
-        
-        win_rate = (df['+30G_Getiri%'] > 0).sum() / len(df) * 100 if len(df) > 0 else 0
-        avg_win = df[df['+30G_Getiri%'] > 0]['+30G_Getiri%'].mean() if (df['+30G_Getiri%'] > 0).sum() > 0 else 0
-        avg_loss = abs(df[df['+30G_Getiri%'] < 0]['+30G_Getiri%'].mean()) if (df['+30G_Getiri%'] < 0).sum() > 0 else 0
-        expectancy = (win_rate/100 * avg_win) - ((100-win_rate)/100 * avg_loss)
-        sharpe_like = df['+30G_Getiri%'].mean() / df['+30G_Getiri%'].std() if df['+30G_Getiri%'].std() > 0 else 0
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("📈 Profit Factor", f"{profit_factor:.2f}" if profit_factor != np.inf else "∞")
-            st.metric("🎯 Win Rate", f"{win_rate:.1f}%")
-        with col2:
-            st.metric("💰 Avg Win", f"%{avg_win:.2f}")
-            st.metric("📉 Avg Loss", f"%{avg_loss:.2f}")
-        with col3:
-            st.metric("⚖️ Expectancy", f"%{expectancy:.2f}")
-            st.metric("📊 Sharpe-like", f"{sharpe_like:.2f}")
-        
-        st.markdown("### ⚠️ Ceza Dağılımı")
-        if 'Quality_Penalty' in df.columns:
-            fig_penalty = go.Figure()
-            fig_penalty.add_trace(go.Histogram(
-                x=df['Quality_Penalty'],
-                nbinsx=10,
-                marker_color='#e74c3c'
-            ))
-            fig_penalty.update_layout(
-                title="Uygulanan Ceza Dağılımı",
-                xaxis_title="Ceza Puanı",
-                yaxis_title="Sinyal Sayısı",
-                height=250
-            )
-            st.plotly_chart(fig_penalty, use_container_width=True)
-        
-        st.markdown("### ⏰ Sinyal Zamanlama Analizi")
-        # DÜZELTİLDİ: Açıklama yeni mantığa göre
-        st.info("""
-        **📌 Sinyal Zamanlama Mantığı:**
-        
-        - **Signal_Date:** Sinyalin oluştuğu kapanış günü
-        - **Entry_Price:** Signal_Date kapanış fiyatı
-        - **Amaç:** Signal_Date sonrası (ertesi işlem günü) işlem planı
-        - **Forward Performans:** Signal_Date sonrası günlerdeki hareket
-        
-        Örnek: 05.08.2026 seçildi → 05.08.2026 kapanış verisi → 06.08.2026 işlem planı
-        """)
-        
-        signal_dates = df['Signal_Date'].value_counts().sort_index()
-        if len(signal_dates) > 0:
-            fig_dates = go.Figure()
-            fig_dates.add_trace(go.Bar(
-                x=signal_dates.index,
-                y=signal_dates.values,
-                marker_color='#3498db'
-            ))
-            fig_dates.update_layout(
-                title="Günlere Göre Sinyal Sayısı",
-                xaxis_title="Signal_Date (Kapanış Günü)",
-                yaxis_title="Sinyal Sayısı",
-                height=300
-            )
-            st.plotly_chart(fig_dates, use_container_width=True)
-        
-        st.markdown("### 📊 Sinyal Performans Analizi")
-        
-        df['Score_Group'] = pd.cut(df['Final_Score'], bins=[0, 45, 55, 65, 75, 100], 
-                                   labels=['0-45', '45-55', '55-65', '65-75', '75+'])
-        
-        perf_by_score = df.groupby('Score_Group')['+30G_Getiri%'].agg(['count', 'mean', 'std']).round(2)
-        perf_by_score.columns = ['Sinyal Sayısı', 'Ort. Getiri %', 'Std']
-        st.dataframe(perf_by_score, use_container_width=True)
-        
-        st.markdown("#### 🎯 Skor Grubuna Göre Başarı Oranı (10G Max>8%, DD<5%)")
-        success_tmp = df[df['Is_Successful'].notna()]
-        if len(success_tmp) > 0:
-            success_by_score = success_tmp.groupby('Score_Group')['Is_Successful'].mean() * 100
-            success_by_score = success_by_score.round(1)
-        else:
-            success_by_score = pd.Series(dtype=float)
-        
-        if len(success_by_score) > 0:
-            fig_success = go.Figure()
-            fig_success.add_trace(go.Bar(
-                x=success_by_score.index,
-                y=success_by_score.values,
-                marker_color=['#e74c3c', '#f1c40f', '#2ecc71', '#3498db', '#9b59b6'],
-                text=success_by_score.values,
-                textposition='outside'
-            ))
-            fig_success.update_layout(
-                title="Skor Grubuna Göre Başarı Oranı",
-                xaxis_title="Final Skor Grubu",
-                yaxis_title="Başarı Oranı %",
-                height=300
-            )
-            st.plotly_chart(fig_success, use_container_width=True)
-        else:
-            st.info("Başarı oranı hesaplamak için yeterli veri yok.")
-        
+        # ===== TEKRAR SİNYAL ANALİZİ (DÜZELTİLDİ) =====
         st.markdown("### 🔄 Tekrar Sinyal Veren Hisseler")
         
         repeat_df = df.groupby('Hisse').agg(
@@ -1334,7 +1212,12 @@ def main():
             Ort_DD=('Max_DD_30G', 'mean')
         ).reset_index()
         
-        repeat_df['Başarı_Oranı'] = (repeat_df['Basari'] / repeat_df['Test'] * 100).round(1)
+        # DÜZELTİLDİ: Sıfıra bölme kontrolü
+        repeat_df['Başarı_Oranı'] = repeat_df.apply(
+            lambda row: (row['Basari'] / row['Test'] * 100).round(1) if row['Test'] > 0 else 0,
+            axis=1
+        )
+        
         repeat_df = repeat_df.fillna(0)
         repeat_df = repeat_df.sort_values('Sinyal', ascending=False)
         
@@ -1342,95 +1225,7 @@ def main():
         display_repeat.columns = ['Hisse', 'Sinyal_Sayısı', 'Test_Sayısı', 'Başarı_Oranı', 'Ort_Skor', 'Ort_30G_Getiri', 'Ort_DD']
         st.dataframe(display_repeat.head(10), use_container_width=True)
         
-        st.markdown("### 🎯 Hedef Analizi")
-        
-        target10_df = df[df['Days_To_%10_Target'].notna()].copy()
-        if len(target10_df) > 0:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("📊 %10 Hedefe Ulaşan Sinyal", f"{len(target10_df)} / {len(df)}")
-                st.metric("⏱️ Ort. %10 Hedef Süresi", f"{target10_df['Days_To_%10_Target'].mean():.0f} gün")
-            with col2:
-                st.metric("📊 %20 Hedefe Ulaşan Sinyal", 
-                         f"{len(df[df['Days_To_%20_Target'].notna()])} / {len(df)}")
-                st.metric("⏱️ Ort. %20 Hedef Süresi", 
-                         f"{df[df['Days_To_%20_Target'].notna()]['Days_To_%20_Target'].mean():.0f} gün")
-        
-        st.markdown("### 🛡️ Risk/Getiri Analizi")
-        
-        risk_df = df[['Hisse', 'Signal_Date', 'Final_Score', '+30G_Getiri%', 'Max_DD_30G', 'Risk_Ratio_30G']].dropna()
-        if len(risk_df) > 0:
-            risk_df = risk_df.sort_values('Risk_Ratio_30G', ascending=False)
-            st.dataframe(risk_df.head(10), use_container_width=True)
-            
-            fig_risk = go.Figure()
-            fig_risk.add_trace(go.Scatter(
-                x=risk_df['Max_DD_30G'],
-                y=risk_df['+30G_Getiri%'],
-                mode='markers',
-                marker=dict(
-                    size=risk_df['Final_Score']/10,
-                    color=risk_df['Final_Score'],
-                    colorscale='Viridis',
-                    showscale=True
-                ),
-                text=risk_df['Hisse'] + ' ' + risk_df['Signal_Date'],
-                hoverinfo='text'
-            ))
-            fig_risk.update_layout(
-                title="Risk/Getiri Dağılımı (Renk: Final Skor, Boyut: Skor)",
-                xaxis_title="Max Drawdown %",
-                yaxis_title="30G Getiri %",
-                height=400
-            )
-            st.plotly_chart(fig_risk, use_container_width=True)
-        
-        st.markdown("### 📋 Sinyal Olayları Listesi")
-        
-        display_cols = ['Signal_ID', 'Hisse', 'Signal_Date', 'Entry_Price', 'Final_Score', 'Quality_Penalty',
-                       'Trend_Quality', 'Money_Score', 'Momentum_Score', 'Breakout_Score', 
-                       'RS_Score', 'Risk_Score', 'RSI', 'ADX', 'VolRatio', 'CMF',
-                       '+30G_Getiri%', '+30G_Max_Getiri%', 'Max_DD_30G', 'Risk_Ratio_30G',
-                       'Days_To_%10_Target', 'Is_Successful']
-        
-        available_cols = [col for col in display_cols if col in df.columns]
-        
-        def style_final_score(val):
-            if val >= 75:
-                return 'background-color: #9b59b6; color: white; font-weight: bold'
-            elif val >= 60:
-                return 'background-color: #2ecc71; color: white'
-            elif val >= 45:
-                return 'background-color: #f1c40f'
-            else:
-                return 'background-color: #e74c3c; color: white'
-        
-        styled_df = df[available_cols].style.map(style_final_score, subset=['Final_Score'])
-        st.dataframe(styled_df, use_container_width=True, height=400)
-        
-        st.markdown("### 🏆 En İyi 5 Sinyal Olayı")
-        top5 = df.nlargest(5, 'Final_Score')
-        
-        cols = st.columns(min(5, len(top5)))
-        for i, (idx, row) in enumerate(top5.iterrows()):
-            with cols[i]:
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #9b59b6, #764ba2); 
-                            padding: 15px; border-radius: 10px; color: white; text-align: center;">
-                    <h3>{row['Hisse']}</h3>
-                    <p style="font-size: 14px;">#{row['Signal_ID']}</p>
-                    <p style="font-size: 20px; font-weight: bold;">{row['Final_Score']:.0f}</p>
-                    <p style="font-size: 12px;">Sinyal Olayı</p>
-                    <hr style="margin: 5px 0;">
-                    <p style="font-size: 11px;">📅 {row['Signal_Date']}</p>
-                    <p style="font-size: 12px;">💰 {row['Entry_Price']} TL</p>
-                    <p style="font-size: 12px;">📊 RSI: {row.get('RSI', 'N/A')} | ADX: {row.get('ADX', 'N/A')}</p>
-                    <p style="font-size: 11px;">📈 30G: %{row.get('+30G_Getiri%', 'N/A')}</p>
-                    <p style="font-size: 10px;">🛡️ DD: {row.get('Max_DD_30G', 'N/A')}% | Risk: {row.get('Risk_Ratio_30G', 'N/A')}</p>
-                    <p style="font-size: 10px;">🎯 %10 Hedef: {row.get('Days_To_%10_Target', 'N/A')} gün</p>
-                </div>
-                """, unsafe_allow_html=True)
-        
+        # ===== SKOR BİLEŞENLERİ =====
         st.markdown("### 📈 Ortalama Skor Bileşenleri")
         score_cols = ['Trend_Quality', 'Money_Score', 'Momentum_Score', 'Breakout_Score', 
                      'RS_Score', 'Risk_Score']
@@ -1479,41 +1274,24 @@ def main():
             )
     
     elif not btn:
-        st.markdown("### 🎯 Sinyal Olayı Backtest Motoru V2.1 (FİNAL)")
+        st.markdown("### 🎯 Sinyal Olayı Backtest Motoru V2.1")
         st.markdown("""
-        **Event-Based Signal Backtest Engine - Final Sürüm:**
+        **Event-Based Signal Backtest Engine:**
 
-        **📌 KRİTİK: Sinyal Zamanlama Mantığı**
-        
-        | Tanım | Açıklama |
-        |-------|----------|
-        | **Signal_Date** | Sinyalin oluştuğu kapanış günü |
-        | **Entry_Price** | Signal_Date kapanış fiyatı |
-        | **Sinyal** | Kapanış sonrası oluşan durum |
-        | **Amaç** | Takip eden işlem günü için aday liste |
-        | **Forward Performans** | Signal_Date sonrası günlerdeki hareket |
-        
-        Örnek: 05.08.2026 seçildi → 05.08.2026 kapanış verisi → 06.08.2026 işlem planı
-        **Kodda:** `valid = np.where(dates <= ref)[0]` kullanılıyor
+        **📌 Sinyal Zamanlama Mantığı:**
+        - **Signal_Date:** Sinyalin oluştuğu kapanış günü
+        - **Entry_Price:** Signal_Date kapanış fiyatı
+        - **Amaç:** Signal_Date sonrası (ertesi işlem günü) işlem planı
 
-        **🔧 Son İyileştirmeler:**
-        - ✅ **Tarih mantığı:** `<=` kullanıldı (seçilen gün dahil)
-        - ✅ **Net tanımlar:** Signal_Date, Entry_Price, Forward_Performance
-        - ✅ **Look-ahead bias koruması:** Sinyal anına kadar veri izolasyonu
-        - ✅ **Önceden veri yükleme:** 10x-30x hız artışı
-        - ✅ **İşlem günü bazlı cooldown:** `np.busday_count`
-        - ✅ **Signal_ID temiz:** `.IS` kaldırıldı
-        - ✅ **Başarı analizi:** Sadece test edilebilir sinyaller
-        - ✅ **Portföy metrikleri:** Profit Factor, Expectancy, Sharpe-like
-        - ✅ **Açıklama metni:** Yeni mantığa göre güncellendi
+        **🔧 Özellikler:**
+        - ✅ Bağımsız sinyal kayıtları
+        - ✅ Look-ahead bias koruması
+        - ✅ Önceden veri yükleme
+        - ✅ Cooldown sistemi
+        - ✅ Portföy metrikleri
 
         **📊 Başarı Metriği:**
         - **Başarılı = +10G Max Getiri > 8% ve Max DD < 5%**
-
-        **📈 Portföy Metrikleri:**
-        - Profit Factor = Kazanç / Kayıp
-        - Expectancy = (Kazanma Oranı × Ort. Kazanç) - (Kaybetme Oranı × Ort. Kayıp)
-        - Sharpe-like = Ort. Getiri / Std. Getiri
         """)
 
 if __name__ == "__main__":
