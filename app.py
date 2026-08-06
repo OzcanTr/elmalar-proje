@@ -124,7 +124,7 @@ st.markdown("""<style>
     .signal-event { background-color: #3498db; color: white; padding: 2px 8px; border-radius: 12px; }
 </style>""", unsafe_allow_html=True)
 
-# ===================== SABİTLER (OPTİMİZE - V2.4) =====================
+# ===================== SABİTLER =====================
 LOOKBACK = 150
 MIN_HISTORY = 120
 STEPS = [5, 10, 15, 30, 60, 90]
@@ -138,24 +138,24 @@ WORKERS = min(16, cpu * 3)
 
 # ===================== STRATEJİ PRESETLERİ (V2.4 - OPTİMİZE) =====================
 STRATEGY_PRESETS = {
-    "⚡ Optimize V2.4 (Veri Odaklı)": {
+    "🎯 Veri Odaklı V2.4 (Optimize)": {
         'base_filters': {
-            'RSI_max': 60, 'RSI_min': 30,
-            'MA200_diff_min': -30, 'MA200_diff_max': 40,
+            'RSI_max': 60, 'RSI_min': 25,
+            'MA200_diff_min': -35, 'MA200_diff_max': 45,
             'ADX_min': 14,
-            'Volume_MA_ratio': 0.4,
+            'Volume_MA_ratio': 0.5,
             'MFI_max': 70, 'MFI_min': 30,
             'Stochastic_max': 65, 'Stochastic_min': 5,
-            'BB_Position_min': 0.03, 'BB_Position_max': 0.65,
+            'BB_Position_min': 0.03, 'BB_Position_max': 0.70,
             'CMF_min': -0.02,
         },
         'profiles': {
-            'Erken': {'Min_Final_Score': 50, 'Min_ADX': 12},
-            'Orta': {'Min_Final_Score': 60, 'Max_RSI': 55, 'Min_ADX': 16},
-            'Sıkı': {'Min_Final_Score': 70, 'Max_RSI': 50, 'Min_RSI': 35, 
+            'Erken': {'Min_Final_Score': 45, 'Min_ADX': 12},
+            'Orta': {'Min_Final_Score': 55, 'Max_RSI': 55, 'Min_ADX': 16},
+            'Sıkı': {'Min_Final_Score': 65, 'Max_RSI': 50, 'Min_RSI': 30, 
                      'Min_ADX': 20, 'Max_ADX': 35}
         },
-        'desc': '⚡ Haziran 2025 verilerine göre optimize edildi'
+        'desc': '🎯 Haziran 2025 verilerine göre optimize edildi'
     },
     "⚡ Hızlı Momentum & Breakout V2.3": {
         'base_filters': {
@@ -174,7 +174,7 @@ STRATEGY_PRESETS = {
             'Sıkı': {'Min_Final_Score': 60, 'Max_RSI': 52, 'Min_RSI': 30, 
                      'Min_ADX': 18, 'Max_ADX': 35}
         },
-        'desc': '⚡ Hızlı versiyon: Momentum & Breakout odaklı'
+        'desc': '⚡ Orijinal V2.3 - En fazla sinyal'
     },
     "🔬 Hızlı Test": {
         'base_filters': {
@@ -407,7 +407,7 @@ def score_stock_v24_optimize(r):
     bb = r.get('BB_Position', 0.5)
     ma200_dist = r.get('MA200_Mesafe%', 0)
     
-    # ===== TREND YÖNÜ SKORU (SADECE MA5-MA10-MA20) =====
+    # ===== TREND YÖNÜ SKORU =====
     ma5 = r.get('MA5', 0)
     ma10 = r.get('MA10', 0)
     ma20 = r.get('MA20', 0)
@@ -416,20 +416,14 @@ def score_stock_v24_optimize(r):
     ma200_val = r.get('MA200', 0)
     
     trend_score = 0
-    
-    # Güçlü yükseliş
     if ma5 > ma10 > ma20:
         trend_score = 15
-    # Yükseliş başlangıcı
     elif ma5 > ma10 and ma10 <= ma20:
         trend_score = 10
-    # Erken toparlanma
     elif ma5 > ma20:
         trend_score = 7
-    # Yatay
     elif abs(ma5 - ma10) / (ma10 + 0.001) < 0.003:
         trend_score = 3
-    # Düşüş - CEZALANDIR
     elif ma5 < ma10 < ma20:
         trend_score = -10
     else:
@@ -437,37 +431,32 @@ def score_stock_v24_optimize(r):
     
     s += trend_score
     
-    # ===== MA50 VE MA200 FİLTRE/BONUS =====
-    # MA50 üzerinde
+    # ===== MA50/200 FİLTRE/BONUS =====
     if close > ma50:
         s += 3
-    
-    # MA200 üzerinde
     if close > ma200_val:
         s += 5
-    
-    # MA200 mesafesi
     if 0 <= ma200_dist <= 10:
         s += 4
     elif ma200_dist > 40:
         s -= 4
     
-    # ===== ANA KATMANLAR (YENİ AĞIRLIKLAR) =====
-    # Trend Quality (10% - DÜŞÜRÜLDÜ)
+    # ===== ANA KATMANLAR =====
+    # Trend Quality (10%)
     if 16 <= adx <= 22: s += 10
     elif 22 < adx <= 28: s += 8
     elif 28 < adx <= 35: s += 5
     elif 12 <= adx < 16: s += 7
     else: s += 0
     
-    # Money Flow (15% - AYNI)
+    # Money Flow (15%)
     if 45 <= rsi <= 58: s += 10
     elif 40 <= rsi < 45 or 58 < rsi <= 65: s += 7
     else: s += 0
     if cmf > 0.05: s += 5
     elif cmf > 0: s += 3
     
-    # Momentum (15% - DÜŞÜRÜLDÜ: 25 → 15)
+    # Momentum (15% - DÜŞÜRÜLDÜ)
     mom_score = 0
     if 'ADX_Slope3' in r and not pd.isna(r.get('ADX_Slope3', 0)):
         mom_score += r['ADX_Slope3'] * 2
@@ -480,9 +469,9 @@ def score_stock_v24_optimize(r):
     
     mom_score = max(-30, min(30, mom_score))
     mom_norm = max(0, min(100, (mom_score / 30) * 50 + 50))
-    s += mom_norm * 0.15  # 25 → 15
+    s += mom_norm * 0.15
     
-    # Breakout (25% - ARTIRILDI: 20 → 25)
+    # Breakout (25% - ARTIRILDI)
     br_score = 0
     if bb > 0.80: br_score += 12
     elif bb > 0.65: br_score += 8
@@ -498,7 +487,7 @@ def score_stock_v24_optimize(r):
     
     s += br_score
     
-    # Relative Strength (15% - AYNI)
+    # Relative Strength (15%)
     rs_score = r.get('RS_Score', 0)
     s += rs_score * 0.75
     
@@ -528,8 +517,7 @@ def score_stock_v24_optimize(r):
     if vol < 0.5: penalty += 2
     if cmf < -0.10: penalty += 2
     
-    # ===== V2.4 YENİ CEZALAR =====
-    # Aşırı yüksek skor için ek kontrol (90+ sorunu)
+    # V2.4 Ek Cezalar
     if adx < 18 and rsi > 55:
         penalty += 3
     if vol < 0.6 and bb > 0.65:
@@ -610,9 +598,20 @@ def calculate_signal_score_v24_optimize(df, idx, symbol=None, index_df=None, dat
     
     scores = score_stock_v24_optimize(score_data)
     
-    # V2.4: Trend Score negatif olanları ele (başarısız sinyallerin %78'i)
+    # ===== V2.4 FİLTRELER =====
+    
+    # 1. Trend Score = -10 olanları ele (başarısızların %78'i)
     if scores['Trend_Score'] < 0:
         return None
+    
+    # 2. Trend Score = 15 ama zayıf sinyalleri ele
+    if scores['Trend_Score'] == 15:
+        adx = row.get('ADX', 0)
+        bb = row.get('BB_Position', 0)
+        
+        # ADX düşük veya BB yüksek ise ele
+        if adx < 18 or bb > 0.65:
+            return None
     
     if scores['Final_Score'] < min_final_score:
         return None
@@ -895,7 +894,7 @@ def main():
         return
     
     defaults = {
-        "strategy_preset": "⚡ Optimize V2.4 (Veri Odaklı)",
+        "strategy_preset": "🎯 Veri Odaklı V2.4 (Optimize)",
         "df": None, "ok": False, "t": 0, "days": 0,
         "min_final_score": 40,
         "signal_history": defaultdict(dict)
@@ -930,7 +929,7 @@ def main():
         st.caption("""
         Trend Yönü: +Bonus | Trend Kalite: 10% | Money Flow: 15% | Momentum: 15% | Breakout: 25% | RS: 15%
         MA50/200: Filtre + Bonus
-        **YENİ:** Trend Score < 0 otomatik elenir
+        **FİLTRELER:** Trend Score < 0 elenir | Trend Score 15 ve ADX<18 veya BB>0.65 elenir
         """)
         
         st.markdown("---")
@@ -1310,10 +1309,11 @@ def main():
         | Momentum Ağırlığı | 25% | **15%** |
         | Breakout Ağırlığı | 20% | **25%** |
         | Trend Score < 0 | Dahil | **Otomatik Elenir** |
-        | RSI Aralığı | 25-65 | **30-60** |
+        | Trend Score 15 | Normal | **ADX<18 veya BB>0.65 ise elenir** |
+        | RSI Aralığı | 25-65 | **25-60** |
         | ADX Min | 10 | **14** |
         | CMF Min | -0.05 | **-0.02** |
-        | BB Max | 0.75 | **0.65** |
+        | BB Max | 0.75 | **0.70** |
 
         **📈 MA Kullanımı:**
         | MA | Kullanım Amacı |
