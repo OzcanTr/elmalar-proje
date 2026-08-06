@@ -7,18 +7,23 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from io import BytesIO
-import calendar
 import plotly.graph_objects as go
 import os
-import uuid
 from collections import defaultdict
+import logging
 
 warnings.filterwarnings('ignore')
 
-st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.4", page_icon="⚡", layout="wide")
+# Logging ayarları
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
+
+st.set_page_config(page_title="BIST Sinyal Olayı Backtest Motoru V2.5", page_icon="⚡", layout="wide")
 
 # ===================== TEST MODU =====================
 TEST_MODE = True
+DEFAULT_USER = "ADMIN"
+DEFAULT_PASSWORD = "Elma*"
 
 # ===================== TÜRKÇE TARİH SEÇİCİ =====================
 TURKISH_MONTHS = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"]
@@ -26,7 +31,7 @@ TURKISH_DAYS = ["Pzt","Sal","Çar","Per","Cum","Cmt","Paz"]
 
 def turkish_date_picker(label, default_date=None, key="tcal", min_date=None, max_date=None):
     if default_date is None:
-        default_date = datetime.now().date()
+        default_date = datetime.now().date() - timedelta(days=1)
     elif hasattr(default_date, 'date'):
         default_date = default_date.date()
     
@@ -84,7 +89,7 @@ def check_password():
     </style>""", unsafe_allow_html=True)
     
     st.markdown('<div class="login-box">', unsafe_allow_html=True)
-    st.markdown("### ⚡ BIST Sinyal Olayı Backtest Motoru V2.4")
+    st.markdown("### ⚡ BIST Sinyal Olayı Backtest Motoru V2.5")
     st.markdown("#### Yetkili Giriş")
     
     msg = st.empty()
@@ -93,8 +98,8 @@ def check_password():
     
     if st.button("🚀 GİRİŞ", use_container_width=True, type="primary", key=f"b_{st.session_state.login_counter}"):
         try:
-            correct_user = st.secrets["USER"]
-            correct_pwd = st.secrets["PASSWORD"]
+            correct_user = st.secrets.get("USER", DEFAULT_USER)
+            correct_pwd = st.secrets.get("PASSWORD", DEFAULT_PASSWORD)
             if user == correct_user and pwd == correct_pwd:
                 st.session_state.authenticated = True
                 msg.success("✅ Başarılı!")
@@ -106,7 +111,7 @@ def check_password():
                 time.sleep(0.3)
                 st.rerun()
         except Exception as e:
-            st.error("❌ Giriş yapılandırması bulunamadı! Lütfen secrets.toml dosyasını oluşturun veya TEST_MODE=True yapın.")
+            st.error(f"❌ Giriş yapılandırması bulunamadı! Hata: {e}")
             return False
     
     st.markdown('</div>', unsafe_allow_html=True)
@@ -131,14 +136,14 @@ STEPS = [5, 10, 15, 30, 60, 90]
 FORWARD_DAYS = 60
 MIN_FORWARD_DAYS = 5
 SIGNAL_COOLDOWN = 10
-CACHE_TTL = 86400  # 24 SAAT
+CACHE_TTL = 86400
 
 cpu = os.cpu_count() or 4
-WORKERS = min(16, cpu * 3)
+WORKERS = min(40, cpu * 5)  # I/O ağırlıklı
 
-# ===================== STRATEJİ PRESETLERİ (V2.4 - OPTİMİZE) =====================
+# ===================== STRATEJİ PRESETLERİ =====================
 STRATEGY_PRESETS = {
-    "🎯 Veri Odaklı V2.4 (Optimize)": {
+    "🎯 Veri Odaklı V2.5 (Optimize)": {
         'base_filters': {
             'RSI_max': 60, 'RSI_min': 25,
             'MA200_diff_min': -35, 'MA200_diff_max': 45,
@@ -155,7 +160,7 @@ STRATEGY_PRESETS = {
             'Sıkı': {'Min_Final_Score': 65, 'Max_RSI': 50, 'Min_RSI': 30, 
                      'Min_ADX': 20, 'Max_ADX': 35}
         },
-        'desc': '🎯 Haziran 2025 verilerine göre optimize edildi'
+        'desc': '🎯 V2.5 - Optimize mimari'
     },
     "⚡ Hızlı Momentum & Breakout V2.3": {
         'base_filters': {
@@ -174,7 +179,7 @@ STRATEGY_PRESETS = {
             'Sıkı': {'Min_Final_Score': 60, 'Max_RSI': 52, 'Min_RSI': 30, 
                      'Min_ADX': 18, 'Max_ADX': 35}
         },
-        'desc': '⚡ Orijinal V2.3 - En fazla sinyal'
+        'desc': '⚡ Orijinal V2.3'
     },
     "🔬 Hızlı Test": {
         'base_filters': {
@@ -200,36 +205,20 @@ def get_lists():
         b50 = sorted(set(bp.Index("XU050").component_symbols))
         b100 = sorted(set(bp.Index("XU100").component_symbols))
         return {'BIST30':b30, 'BIST50':b50, 'BIST100':b100, 'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
-    except:
+    except Exception as e:
+        logger.warning(f"Liste alınamadı: {e}")
         return {'Takip':["ASELS","THYAO","SISE","EREGL","BIMAS"]}
 
-# ===================== HIZLI VERİ ÇEKME =====================
+# ===================== VERİ ÇEKME =====================
 @st.cache_data(ttl=CACHE_TTL)
-def get_data_fast(symbol, date_str):
-    """Hızlı veri çekme"""
+def get_data_range(symbol, start_str, end_str):
+    """Tarih aralığı için tek seferde veri çek"""
     try:
-        ref = pd.to_datetime(date_str)
-        today = datetime.now().date()
-        
-        if ref.date() > today:
-            ref = pd.Timestamp(today)
-        
         sym = symbol.upper().strip()
         if not sym.endswith(".IS"): sym += ".IS"
         
-        start = (ref - timedelta(days=LOOKBACK*2)).strftime('%Y-%m-%d')
-        
-        days_until_today = (today - ref.date()).days
-        
-        if days_until_today >= MIN_FORWARD_DAYS:
-            end = (ref + timedelta(days=FORWARD_DAYS)).strftime('%Y-%m-%d')
-            if pd.to_datetime(end).date() > today:
-                end = today.strftime('%Y-%m-%d')
-        else:
-            end = ref.strftime('%Y-%m-%d')
-        
         ticker = bp.Ticker(sym)
-        df = ticker.history(start=start, end=end)
+        df = ticker.history(start=start_str, end=end_str)
         
         if df is None or len(df) == 0:
             return None
@@ -284,17 +273,18 @@ def get_data_fast(symbol, date_str):
         
         return result
     except Exception as e:
+        logger.warning(f"Veri çekme hatası ({symbol}): {e}")
         return None
 
 # ===================== GÖSTERGE HESAPLAMA =====================
-def calc_indicators_fast(df):
-    """Hızlı gösterge hesaplama"""
+def calc_indicators_optimized(df, index_df=None, date_index_map=None):
+    """Tek seferde tüm göstergeleri hesapla (RS Score dahil)"""
     if df is None or len(df) < MIN_HISTORY:
         return None
     
     df = df.dropna(subset=['Close', 'High', 'Low', 'Volume'])
     
-    clean_df = pd.DataFrame()
+    clean_df = pd.DataFrame(index=df.index)
     clean_df['Date'] = df['Date'].values
     clean_df['Open'] = df['Open'].values.astype(float)
     clean_df['High'] = df['High'].values.astype(float)
@@ -302,128 +292,154 @@ def calc_indicators_fast(df):
     clean_df['Close'] = df['Close'].values.astype(float)
     clean_df['Volume'] = df['Volume'].values.astype(float)
     
-    for p in [5, 10, 20, 50, 200]:
-        clean_df[f'MA{p}'] = clean_df['Close'].rolling(p).mean()
-        clean_df[f'VMA{p}'] = clean_df['Volume'].rolling(p).mean()
+    close = clean_df['Close']
+    high = clean_df['High']
+    low = clean_df['Low']
+    volume = clean_df['Volume']
     
-    # RSI - WILDER
-    d = clean_df['Close'].diff()
+    # MA'lar
+    for p in [5, 10, 20, 50, 200]:
+        clean_df[f'MA{p}'] = close.rolling(p).mean()
+    
+    # VMA'lar
+    for p in [5, 10, 20]:
+        clean_df[f'VMA{p}'] = volume.rolling(p).mean()
+    
+    # RSI - Wilder
+    d = close.diff()
     gain = d.clip(lower=0)
     loss = -d.clip(upper=0)
     avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
     clean_df['RSI'] = 100 - 100/(1+rs)
-    clean_df['RSI'] = clean_df['RSI'].fillna(50)
     
-    # STOCHASTIC
-    high_14 = clean_df['High'].rolling(14).max()
-    low_14 = clean_df['Low'].rolling(14).min()
-    denom = (high_14 - low_14).replace(0, np.nan)
-    clean_df['Stochastic'] = 100 * (clean_df['Close'] - low_14) / denom
-    clean_df['Stochastic'] = clean_df['Stochastic'].fillna(50)
+    # Stochastic
+    high_14 = high.rolling(14).max()
+    low_14 = low.rolling(14).min()
+    clean_df['Stochastic'] = 100 * (close - low_14) / (high_14 - low_14).replace(0, np.nan)
     
-    # ADX - WILDER
-    tr = np.maximum(clean_df['High']-clean_df['Low'], 
-                    np.maximum(abs(clean_df['High']-clean_df['Close'].shift()), 
-                              abs(clean_df['Low']-clean_df['Close'].shift())))
-    atr = pd.Series(tr).ewm(alpha=1/14, adjust=False).mean()
+    # ADX - Wilder (index korunarak)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs()
+    ], axis=1).max(axis=1)
     
-    dp = np.where((clean_df['High']-clean_df['High'].shift())>(clean_df['Low'].shift()-clean_df['Low']), 
-                  np.maximum(clean_df['High']-clean_df['High'].shift(),0),0)
-    dm = np.where((clean_df['Low'].shift()-clean_df['Low'])>(clean_df['High']-clean_df['High'].shift()), 
-                  np.maximum(clean_df['Low'].shift()-clean_df['Low'],0),0)
+    atr = tr.ewm(alpha=1/14, adjust=False).mean()
     
-    dp_series = pd.Series(dp, index=clean_df.index)
-    dm_series = pd.Series(dm, index=clean_df.index)
+    up_move = high - high.shift()
+    down_move = low.shift() - low
     
-    di_plus = 100 * (dp_series.ewm(alpha=1/14, adjust=False).mean() / atr)
-    di_minus = 100 * (dm_series.ewm(alpha=1/14, adjust=False).mean() / atr)
+    dp = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0), index=df.index)
+    dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0), index=df.index)
     
-    denom_adx = (di_plus + di_minus).replace(0, np.nan)
-    dx = 100 * abs(di_plus - di_minus) / denom_adx
+    di_plus = 100 * (dp.ewm(alpha=1/14, adjust=False).mean() / atr)
+    di_minus = 100 * (dm.ewm(alpha=1/14, adjust=False).mean() / atr)
+    
+    dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus).replace(0, np.nan)
     clean_df['ADX'] = dx.ewm(alpha=1/14, adjust=False).mean()
-    clean_df['ADX'] = clean_df['ADX'].fillna(20)
     
     # VolRatio
     vma20 = clean_df['VMA20'].replace(0, np.nan)
-    clean_df['VolRatio'] = clean_df['Volume'] / vma20
-    clean_df['VolRatio'] = clean_df['VolRatio'].fillna(1)
+    clean_df['VolRatio'] = volume / vma20
     
     # MFI
-    tp = (clean_df['High']+clean_df['Low']+clean_df['Close'])/3
-    mf = tp * clean_df['Volume']
-    pf = mf.where(tp>tp.shift(),0).rolling(14).sum()
-    nf = mf.where(tp<tp.shift(),0).rolling(14).sum()
-    ratio = pf / nf.replace(0, np.nan)
-    clean_df['MFI'] = 100 - 100/(1+ratio)
-    clean_df['MFI'] = clean_df['MFI'].fillna(50)
+    tp = (high + low + close) / 3
+    mf = tp * volume
+    pf = mf.where(tp > tp.shift(), 0).rolling(14).sum()
+    nf = mf.where(tp < tp.shift(), 0).rolling(14).sum()
+    clean_df['MFI'] = 100 - 100/(1 + pf / nf.replace(0, np.nan))
     
     # BB Position
-    clean_df['BB_Mid'] = clean_df['Close'].rolling(20).mean()
-    clean_df['BB_Std'] = clean_df['Close'].rolling(20).std()
-    clean_df['BB_Upper'] = clean_df['BB_Mid'] + 2 * clean_df['BB_Std']
-    clean_df['BB_Lower'] = clean_df['BB_Mid'] - 2 * clean_df['BB_Std']
-    bb_range = clean_df['BB_Upper'] - clean_df['BB_Lower']
-    clean_df['BB_Position'] = np.where(
-        bb_range > 0,
-        (clean_df['Close'] - clean_df['BB_Lower']) / bb_range,
-        0.5
-    )
-    clean_df['BB_Position'] = clean_df['BB_Position'].fillna(0.5)
+    bb_mid = close.rolling(20).mean()
+    bb_std = close.rolling(20).std()
+    bb_upper = bb_mid + 2 * bb_std
+    bb_lower = bb_mid - 2 * bb_std
+    bb_range = bb_upper - bb_lower
+    clean_df['BB_Position'] = np.where(bb_range > 0, (close - bb_lower) / bb_range, 0.5)
+    clean_df['BB_Mid'] = bb_mid
+    clean_df['BB_Upper'] = bb_upper
+    clean_df['BB_Lower'] = bb_lower
     
     # CMF
-    try:
-        high_low = clean_df['High'] - clean_df['Low']
-        high_low = high_low.replace(0, np.nan)
-        mf_multiplier = ((clean_df['Close'] - clean_df['Low']) - (clean_df['High'] - clean_df['Close'])) / high_low
-        mf_volume = mf_multiplier * clean_df['Volume']
-        clean_df['CMF'] = mf_volume.rolling(20).sum() / clean_df['Volume'].rolling(20).sum()
-        clean_df['CMF'] = clean_df['CMF'].fillna(0)
-    except:
-        clean_df['CMF'] = 0
+    high_low = high - low
+    mf_multiplier = ((close - low) - (high - close)) / high_low.replace(0, np.nan)
+    mf_volume = mf_multiplier * volume
+    clean_df['CMF'] = mf_volume.rolling(20).sum() / volume.rolling(20).sum()
     
     # MA200 Mesafe
-    clean_df['MA200_Mesafe%'] = ((clean_df['Close'] - clean_df['MA200']) / clean_df['MA200']) * 100
+    clean_df['MA200_Mesafe%'] = ((close - clean_df['MA200']) / clean_df['MA200']) * 100
+    
+    # RS Score'u indikatör aşamasında hesapla
+    clean_df['RS_5'] = close.pct_change(5) * 100
+    clean_df['RS_10'] = close.pct_change(10) * 100
+    clean_df['RS_20'] = close.pct_change(20) * 100
+    
+    clean_df['RS_Score'] = 0
+    if index_df is not None and date_index_map is not None:
+        try:
+            for i in clean_df.index:
+                if i < 20:
+                    continue
+                current_date = pd.Timestamp(clean_df['Date'].iloc[i]).normalize()
+                if current_date in date_index_map:
+                    index_idx = date_index_map[current_date]
+                    if index_idx < 20:
+                        continue
+                    
+                    rs_values = []
+                    for period in [5, 10, 20]:
+                        stock_ret = clean_df[f'RS_{period}'].iloc[i]
+                        if pd.notna(stock_ret) and index_idx >= period:
+                            index_start = index_df['Close'].iloc[index_idx - period]
+                            if index_start > 0:
+                                index_ret = ((index_df['Close'].iloc[index_idx] - index_start) / index_start) * 100
+                                rs_values.append(stock_ret - index_ret)
+                    
+                    if rs_values:
+                        avg_rs = np.mean(rs_values)
+                        if avg_rs > 3: clean_df.loc[i, 'RS_Score'] = 20
+                        elif avg_rs > 1: clean_df.loc[i, 'RS_Score'] = 15
+                        elif avg_rs > 0: clean_df.loc[i, 'RS_Score'] = 10
+                        elif avg_rs > -1: clean_df.loc[i, 'RS_Score'] = 5
+        except Exception as e:
+            logger.warning(f"RS Score hesaplama hatası: {e}")
     
     # Slope'lar
-    indicators = ['RSI', 'ADX', 'Stochastic', 'VolRatio', 'BB_Position', 'MFI', 'CMF']
-    for ind in indicators:
+    for ind in ['RSI', 'ADX', 'Stochastic', 'VolRatio', 'BB_Position', 'MFI', 'CMF']:
         if ind in clean_df.columns:
-            clean_df[f'{ind}_Slope3'] = clean_df[ind].diff(3).fillna(0)
-            clean_df[f'{ind}_Slope5'] = clean_df[ind].diff(5).fillna(0)
+            clean_df[f'{ind}_Slope3'] = clean_df[ind].diff(3)
+            clean_df[f'{ind}_Slope5'] = clean_df[ind].diff(5)
     
     return clean_df
 
-# ===================== SKORLAMA (V2.4 - OPTİMİZE) =====================
-def score_stock_v24_optimize(r):
-    """V2.4 - Optimize skorlama (Haziran 2025 verilerine göre)"""
+# ===================== SKORLAMA =====================
+def score_stock_v25_optimize(r):
+    """V2.5 Optimize skorlama"""
     s = 0
-    adx = r.get('ADX', 20)
-    rsi = r.get('RSI', 50)
-    vol = r.get('VolRatio', 1)
-    cmf = r.get('CMF', 0)
-    stoch = r.get('Stochastic', 50)
-    bb = r.get('BB_Position', 0.5)
-    ma200_dist = r.get('MA200_Mesafe%', 0)
+    adx = r.get('ADX', 20) or 20
+    rsi = r.get('RSI', 50) or 50
+    vol = r.get('VolRatio', 1) or 1
+    cmf = r.get('CMF', 0) or 0
+    stoch = r.get('Stochastic', 50) or 50
+    bb = r.get('BB_Position', 0.5) or 0.5
+    ma200_dist = r.get('MA200_Mesafe%', 0) or 0
     
-    # ===== TREND YÖNÜ SKORU =====
-    ma5 = r.get('MA5', 0)
-    ma10 = r.get('MA10', 0)
-    ma20 = r.get('MA20', 0)
-    close = r.get('Close', 0)
-    ma50 = r.get('MA50', 0)
-    ma200_val = r.get('MA200', 0)
+    ma5 = r.get('MA5', 0) or 0
+    ma10 = r.get('MA10', 0) or 0
+    ma20 = r.get('MA20', 0) or 0
+    close = r.get('Close', 0) or 0
+    ma50 = r.get('MA50', 0) or 0
+    ma200_val = r.get('MA200', 0) or 0
     
-    trend_score = 0
+    # Trend yönü
     if ma5 > ma10 > ma20:
         trend_score = 15
-    elif ma5 > ma10 and ma10 <= ma20:
+    elif ma5 > ma10:
         trend_score = 10
     elif ma5 > ma20:
         trend_score = 7
-    elif abs(ma5 - ma10) / (ma10 + 0.001) < 0.003:
-        trend_score = 3
     elif ma5 < ma10 < ma20:
         trend_score = -10
     else:
@@ -431,47 +447,36 @@ def score_stock_v24_optimize(r):
     
     s += trend_score
     
-    # ===== MA50/200 FİLTRE/BONUS =====
-    if close > ma50:
-        s += 3
-    if close > ma200_val:
-        s += 5
-    if 0 <= ma200_dist <= 10:
-        s += 4
-    elif ma200_dist > 40:
-        s -= 4
+    # MA50/200 bonus
+    if close > ma50: s += 3
+    if close > ma200_val: s += 5
+    if 0 <= ma200_dist <= 10: s += 4
+    elif ma200_dist > 40: s -= 4
     
-    # ===== ANA KATMANLAR =====
-    # Trend Quality (10%)
+    # Trend kalitesi
     if 16 <= adx <= 22: s += 10
     elif 22 < adx <= 28: s += 8
     elif 28 < adx <= 35: s += 5
     elif 12 <= adx < 16: s += 7
-    else: s += 0
     
-    # Money Flow (15%)
+    # Money flow
     if 45 <= rsi <= 58: s += 10
     elif 40 <= rsi < 45 or 58 < rsi <= 65: s += 7
-    else: s += 0
     if cmf > 0.05: s += 5
     elif cmf > 0: s += 3
     
-    # Momentum (15% - DÜŞÜRÜLDÜ)
+    # Momentum
     mom_score = 0
-    if 'ADX_Slope3' in r and not pd.isna(r.get('ADX_Slope3', 0)):
-        mom_score += r['ADX_Slope3'] * 2
-    if 'CMF_Slope3' in r and not pd.isna(r.get('CMF_Slope3', 0)):
-        mom_score += r['CMF_Slope3'] * 20
-    if 'RSI_Slope3' in r and not pd.isna(r.get('RSI_Slope3', 0)):
-        mom_score += r['RSI_Slope3'] * 1.5
-    if 'VolRatio_Slope3' in r and not pd.isna(r.get('VolRatio_Slope3', 0)):
-        mom_score += r['VolRatio_Slope3'] * 1.5
+    for ind, mult in [('ADX', 2), ('CMF', 20), ('RSI', 1.5), ('VolRatio', 1.5)]:
+        slope_key = f'{ind}_Slope3'
+        if slope_key in r and not pd.isna(r.get(slope_key)):
+            mom_score += r[slope_key] * mult
     
-    mom_score = max(-30, min(30, mom_score))
+    mom_score = max(-30, min(30, mom_score or 0))
     mom_norm = max(0, min(100, (mom_score / 30) * 50 + 50))
     s += mom_norm * 0.15
     
-    # Breakout (25% - ARTIRILDI)
+    # Breakout
     br_score = 0
     if bb > 0.80: br_score += 12
     elif bb > 0.65: br_score += 8
@@ -487,41 +492,27 @@ def score_stock_v24_optimize(r):
     
     s += br_score
     
-    # Relative Strength (15%)
-    rs_score = r.get('RS_Score', 0)
+    # RS Score (indikatör aşamasında hesaplandı)
+    rs_score = r.get('RS_Score', 0) or 0
     s += rs_score * 0.75
     
-    # ===== BONUSLAR =====
-    if adx > 35:
-        s += 8
-    elif adx > 25:
-        s += 5
+    # Bonuslar
+    if adx > 35: s += 8
+    elif adx > 25: s += 5
+    if vol > 1.2: s += 4
+    if cmf > 0.10: s += 3
+    if (stoch or 50) < 30 and (r.get('Stochastic_Slope3') or 0) > 0: s += 4
+    if 0.45 <= bb <= 0.65: s += 3
     
-    if vol > 1.2:
-        s += 4
-    
-    if cmf > 0.10:
-        s += 3
-    
-    if stoch < 30 and r.get('Stochastic_Slope3', 0) > 0:
-        s += 4
-    
-    if 0.45 <= bb <= 0.65:
-        s += 3
-    
-    # ===== CEZALAR =====
+    # Cezalar
     penalty = 0
     if stoch > 85 and bb > 0.85: penalty += 3
     if rsi > 75: penalty += 2
     if ma200_dist > 50: penalty += 3
     if vol < 0.5: penalty += 2
     if cmf < -0.10: penalty += 2
-    
-    # V2.4 Ek Cezalar
-    if adx < 18 and rsi > 55:
-        penalty += 3
-    if vol < 0.6 and bb > 0.65:
-        penalty += 3
+    if adx < 18 and rsi > 55: penalty += 3
+    if vol < 0.6 and bb > 0.65: penalty += 3
     
     final_score = max(0, min(100, s - penalty))
     
@@ -538,125 +529,50 @@ def score_stock_v24_optimize(r):
         'Final_Score': final_score
     }
 
-def calculate_signal_score_v24_optimize(df, idx, symbol=None, index_df=None, date_index_map=None, min_final_score=40):
-    row = df.iloc[idx]
-    
-    # RS Score hesapla
-    rs_score = 0
-    if index_df is not None and date_index_map is not None and idx >= 20:
-        try:
-            current_date = pd.Timestamp(df['Date'].iloc[idx]).normalize()
-            if current_date in date_index_map:
-                index_idx = date_index_map[current_date]
-                current_price = df['Close'].iloc[idx]
-                index_current = index_df['Close'].iloc[index_idx]
-                
-                rs_values = []
-                for period in [5, 10, 20]:
-                    if idx >= period and index_idx >= period:
-                        stock_prev = df['Close'].iloc[idx - period]
-                        index_prev = index_df['Close'].iloc[index_idx - period]
-                        
-                        if stock_prev > 0 and index_prev > 0:
-                            stock_return = ((current_price - stock_prev) / stock_prev) * 100
-                            index_return = ((index_current - index_prev) / index_prev) * 100
-                            rs = stock_return - index_return
-                            rs_values.append(rs)
-                
-                if rs_values:
-                    avg_rs = np.mean(rs_values)
-                    if avg_rs > 3: rs_score = 20
-                    elif avg_rs > 1: rs_score = 15
-                    elif avg_rs > 0: rs_score = 10
-                    elif avg_rs > -1: rs_score = 5
-                    else: rs_score = 0
-        except:
-            pass
-    
-    # Skor verilerini hazırla
-    score_data = {
-        'ADX': row.get('ADX', 20),
-        'RSI': row.get('RSI', 50),
-        'VolRatio': row.get('VolRatio', 1),
-        'CMF': row.get('CMF', 0),
-        'Stochastic': row.get('Stochastic', 50),
-        'BB_Position': row.get('BB_Position', 0.5),
-        'MA200_Mesafe%': row.get('MA200_Mesafe%', 0),
-        'RS_Score': rs_score,
-        'ADX_Slope3': row.get('ADX_Slope3', 0),
-        'CMF_Slope3': row.get('CMF_Slope3', 0),
-        'RSI_Slope3': row.get('RSI_Slope3', 0),
-        'VolRatio_Slope3': row.get('VolRatio_Slope3', 0),
-        'Stochastic_Slope3': row.get('Stochastic_Slope3', 0),
-        'MA5': row.get('MA5', 0),
-        'MA10': row.get('MA10', 0),
-        'MA20': row.get('MA20', 0),
-        'MA50': row.get('MA50', 0),
-        'MA200': row.get('MA200', 0),
-        'Close': row.get('Close', 0),
-    }
-    
-    scores = score_stock_v24_optimize(score_data)
-    
-    # ===== V2.4 FİLTRELER =====
-    
-    # 1. Trend Score = -10 olanları ele (başarısızların %78'i)
-    if scores['Trend_Score'] < 0:
-        return None
-    
-    # 2. Trend Score = 15 ama zayıf sinyalleri ele
-    if scores['Trend_Score'] == 15:
-        adx = row.get('ADX', 0)
-        bb = row.get('BB_Position', 0)
-        
-        # ADX düşük veya BB yüksek ise ele
-        if adx < 18 or bb > 0.65:
-            return None
-    
-    if scores['Final_Score'] < min_final_score:
-        return None
-    
-    return scores
-
-# ===================== FİLTRE =====================
-def check_signal_fast(df, i, base_filters):
+# ===================== FİLTRELER =====================
+def check_signal_fast(df, idx, base_filters):
+    """Tek bir indekste sinyal kontrolü"""
     try:
-        rsi = df['RSI'].iloc[i]
+        row = df.iloc[idx]
+        
+        rsi = row['RSI']
         if pd.isna(rsi) or rsi > base_filters['RSI_max'] or rsi < base_filters['RSI_min']:
             return False
         
-        if pd.isna(df['MA200'].iloc[i]):
-            return False
-        ma200_diff = ((df['Close'].iloc[i] - df['MA200'].iloc[i]) / df['MA200'].iloc[i]) * 100
-        if ma200_diff < base_filters['MA200_diff_min'] or ma200_diff > base_filters['MA200_diff_max']:
+        if pd.isna(row['MA200']):
             return False
         
-        adx = df['ADX'].iloc[i]
+        ma200_diff = row['MA200_Mesafe%']
+        if pd.isna(ma200_diff) or ma200_diff < base_filters['MA200_diff_min'] or ma200_diff > base_filters['MA200_diff_max']:
+            return False
+        
+        adx = row['ADX']
         if pd.isna(adx) or adx < base_filters['ADX_min']:
             return False
         
-        vol = df['VolRatio'].iloc[i]
+        vol = row['VolRatio']
         if pd.isna(vol) or vol < base_filters['Volume_MA_ratio']:
             return False
         
-        mfi = df['MFI'].iloc[i]
+        mfi = row['MFI']
         if pd.isna(mfi) or mfi > base_filters['MFI_max'] or mfi < base_filters['MFI_min']:
             return False
         
-        stoch = df['Stochastic'].iloc[i]
+        stoch = row['Stochastic']
         if pd.isna(stoch) or stoch > base_filters['Stochastic_max'] or stoch < base_filters['Stochastic_min']:
             return False
         
-        bb = df['BB_Position'].iloc[i]
+        bb = row['BB_Position']
         if pd.isna(bb) or bb > base_filters['BB_Position_max'] or bb < base_filters['BB_Position_min']:
             return False
         
-        cmf = df['CMF'].iloc[i]
+        cmf = row['CMF']
         if pd.isna(cmf) or cmf < base_filters.get('CMF_min', -0.02):
             return False
         
         return True
-    except:
+    except Exception as e:
+        logger.warning(f"Sinyal kontrol hatası: {e}")
         return False
 
 def apply_filter_fast(r, filters):
@@ -669,15 +585,10 @@ def apply_filter_fast(r, filters):
         if 'Min_ADX' in filters and r['ADX'] < filters['Min_ADX']: return False
         if r['VolRatio'] < filters.get('Min_Volume_MA', 0): return False
         if 'Max_Volume_MA' in filters and r['VolRatio'] > filters['Max_Volume_MA']: return False
-        if 'Max_MFI' in filters and r['MFI'] > filters['Max_MFI']: return False
-        if 'Min_MFI' in filters and r['MFI'] < filters['Min_MFI']: return False
-        if 'Max_Stochastic' in filters and r.get('Stochastic', 0) > filters['Max_Stochastic']: return False
-        if 'Min_Stochastic' in filters and r.get('Stochastic', 100) < filters['Min_Stochastic']: return False
-        if 'Max_BB_Position' in filters and r.get('BB_Position', 0) > filters['Max_BB_Position']: return False
-        if 'Min_BB_Position' in filters and r.get('BB_Position', 1) < filters['Min_BB_Position']: return False
         if r['Final_Score'] < filters.get('Min_Final_Score', 0): return False
         return True
-    except:
+    except Exception as e:
+        logger.warning(f"Filtre hatası: {e}")
         return False
 
 # ===================== BAŞARI METRİĞİ =====================
@@ -688,178 +599,267 @@ def is_successful(signal_event):
     if max_return is None or max_dd is None or max_dd == 0:
         return None
     
-    rr = max_return / max_dd
-    if rr > 2:
-        return 1
-    else:
-        return 0
+    return 1 if max_return / max_dd > 2 else 0
 
 # ===================== TARAMA =====================
-def scan_stock_fast(sym, df_full, ref_date, base_filters, profile=None, 
-                    index_df=None, date_index_map=None, min_final_score=40):
+def scan_stock_all_dates(sym, df_full, bdays, base_filters, profile, 
+                         index_df, date_index_map, min_final_score):
+    """Bir hisseyi tüm iş günleri için tara"""
+    results = []
+    
     try:
         if df_full is None or len(df_full) < MIN_HISTORY:
-            return None
+            return results
         
-        df = calc_indicators_fast(df_full)
+        df = calc_indicators_optimized(df_full, index_df, date_index_map)
         if df is None:
-            return None
+            return results
         
-        ref = pd.to_datetime(ref_date).normalize()
-        dates = df['Date'].dt.normalize()
+        df_dates = df['Date'].dt.normalize()
         
-        valid = np.where(dates <= ref)[0]
-        if len(valid) == 0:
-            return None
-        idx = valid[-1]
-        
-        signal_df = df.iloc[:idx+1].copy()
-        signal_idx = len(signal_df) - 1
-        
-        if not check_signal_fast(signal_df, signal_idx, base_filters):
-            return None
-        
-        signal_price = signal_df['Close'].iloc[signal_idx]
-        signal_date = signal_df['Date'].iloc[signal_idx]
-        
-        ma200_diff = None
-        if pd.notna(signal_df['MA200'].iloc[signal_idx]):
-            ma200_diff = ((signal_price - signal_df['MA200'].iloc[signal_idx]) / signal_df['MA200'].iloc[signal_idx]) * 100
-        
-        clean_symbol = sym.replace(".IS", "")
-        signal_id = f"{clean_symbol}_{signal_date.strftime('%Y%m%d')}"
-        
-        scores = calculate_signal_score_v24_optimize(signal_df, signal_idx, sym, index_df, date_index_map, min_final_score)
-        if scores is None:
-            return None
-        
-        signal_event = {
-            'Signal_ID': signal_id,
-            'Hisse': sym,
-            'Signal_Date': signal_date.strftime('%Y-%m-%d'),
-            'Entry_Price': round(signal_price, 2),
+        for day in bdays:
+            ref = pd.Timestamp(day).normalize()
             
-            'RSI': round(signal_df['RSI'].iloc[signal_idx], 1),
-            'ADX': round(signal_df['ADX'].iloc[signal_idx], 1),
-            'VolRatio': round(signal_df['VolRatio'].iloc[signal_idx], 2),
-            'MFI': round(signal_df['MFI'].iloc[signal_idx], 1),
-            'Stochastic': round(signal_df['Stochastic'].iloc[signal_idx], 1),
-            'BB_Position': round(signal_df['BB_Position'].iloc[signal_idx], 2),
-            'CMF': round(signal_df['CMF'].iloc[signal_idx], 3),
-            'MA200_Mesafe%': round(ma200_diff, 1) if ma200_diff is not None else None,
+            valid_idx = df_dates[df_dates <= ref].index
+            if len(valid_idx) == 0:
+                continue
             
-            'MA5': round(signal_df['MA5'].iloc[signal_idx], 2),
-            'MA10': round(signal_df['MA10'].iloc[signal_idx], 2),
-            'MA20': round(signal_df['MA20'].iloc[signal_idx], 2),
-            'MA50': round(signal_df['MA50'].iloc[signal_idx], 2),
-            'MA200': round(signal_df['MA200'].iloc[signal_idx], 2),
+            idx = valid_idx[-1]
             
-            'Base_Score': scores['Base_Score'],
-            'Momentum_Score': scores['Momentum_Score'],
-            'Breakout_Score': scores['Breakout_Score'],
-            'RS_Score': scores['RS_Score'],
-            'Trend_Score': scores['Trend_Score'],
-            'ADX_Bonus': scores['ADX_Bonus'],
-            'Vol_Bonus': scores['Vol_Bonus'],
-            'CMF_Bonus': scores['CMF_Bonus'],
-            'Quality_Penalty': scores['Quality_Penalty'],
-            'Final_Score': scores['Final_Score']
-        }
-        
-        if profile:
-            if not apply_filter_fast(signal_event, profile):
-                return None
-        
-        if len(df) > idx + 1:
-            for s in STEPS:
-                if idx + s < len(df):
-                    future_close = df['Close'].iloc[idx + s]
-                    if pd.notna(future_close) and signal_price != 0:
-                        signal_event[f'+{s}G_Getiri%'] = round(((future_close - signal_price) / signal_price) * 100, 2)
+            if idx < MIN_HISTORY:
+                continue
+            
+            if pd.isna(df['RSI'].iloc[idx]) or pd.isna(df['ADX'].iloc[idx]):
+                continue
+            
+            if not check_signal_fast(df, idx, base_filters):
+                continue
+            
+            signal_price = df['Close'].iloc[idx]
+            signal_date = df['Date'].iloc[idx]
+            
+            row = df.iloc[idx]
+            score_data = {
+                'ADX': row['ADX'],
+                'RSI': row['RSI'],
+                'VolRatio': row['VolRatio'],
+                'CMF': row['CMF'],
+                'Stochastic': row['Stochastic'],
+                'BB_Position': row['BB_Position'],
+                'MA200_Mesafe%': row['MA200_Mesafe%'],
+                'RS_Score': row['RS_Score'],  # İndikatör aşamasında hesaplandı
+                'ADX_Slope3': row['ADX_Slope3'],
+                'CMF_Slope3': row['CMF_Slope3'],
+                'RSI_Slope3': row['RSI_Slope3'],
+                'VolRatio_Slope3': row['VolRatio_Slope3'],
+                'Stochastic_Slope3': row['Stochastic_Slope3'],
+                'MA5': row['MA5'],
+                'MA10': row['MA10'],
+                'MA20': row['MA20'],
+                'MA50': row['MA50'],
+                'MA200': row['MA200'],
+                'Close': signal_price,
+            }
+            
+            scores = score_stock_v25_optimize(score_data)
+            
+            if scores['Trend_Score'] < 0:
+                continue
+            if scores['Trend_Score'] == 15:
+                if (row['ADX'] or 20) < 18 or (row['BB_Position'] or 0) > 0.65:
+                    continue
+            if scores['Final_Score'] < min_final_score:
+                continue
+            
+            clean_symbol = sym.replace(".IS", "")
+            signal_id = f"{clean_symbol}_{signal_date.strftime('%Y%m%d')}"
+            
+            signal_event = {
+                'Signal_ID': signal_id,
+                'Hisse': sym,
+                'Signal_Date': signal_date.strftime('%Y-%m-%d'),
+                'Entry_Price': round(signal_price, 2),
+                'RSI': round(row['RSI'], 1) if pd.notna(row['RSI']) else None,
+                'ADX': round(row['ADX'], 1) if pd.notna(row['ADX']) else None,
+                'VolRatio': round(row['VolRatio'], 2) if pd.notna(row['VolRatio']) else None,
+                'MFI': round(row['MFI'], 1) if pd.notna(row['MFI']) else None,
+                'Stochastic': round(row['Stochastic'], 1) if pd.notna(row['Stochastic']) else None,
+                'BB_Position': round(row['BB_Position'], 2) if pd.notna(row['BB_Position']) else None,
+                'CMF': round(row['CMF'], 3) if pd.notna(row['CMF']) else None,
+                'MA200_Mesafe%': round(row['MA200_Mesafe%'], 1) if pd.notna(row['MA200_Mesafe%']) else None,
+                'MA5': round(row['MA5'], 2) if pd.notna(row['MA5']) else None,
+                'MA10': round(row['MA10'], 2) if pd.notna(row['MA10']) else None,
+                'MA20': round(row['MA20'], 2) if pd.notna(row['MA20']) else None,
+                'MA50': round(row['MA50'], 2) if pd.notna(row['MA50']) else None,
+                'MA200': round(row['MA200'], 2) if pd.notna(row['MA200']) else None,
+                'Base_Score': scores['Base_Score'],
+                'Momentum_Score': scores['Momentum_Score'],
+                'Breakout_Score': scores['Breakout_Score'],
+                'RS_Score': scores['RS_Score'],
+                'Trend_Score': scores['Trend_Score'],
+                'ADX_Bonus': scores['ADX_Bonus'],
+                'Vol_Bonus': scores['Vol_Bonus'],
+                'CMF_Bonus': scores['CMF_Bonus'],
+                'Quality_Penalty': scores['Quality_Penalty'],
+                'Final_Score': scores['Final_Score']
+            }
+            
+            if profile and not apply_filter_fast(signal_event, profile):
+                continue
+            
+            # İleri bar hesaplamaları (bar sayısı, takvim günü değil)
+            total_len = len(df)
+            if total_len > idx + 1:
+                for s in STEPS:
+                    if idx + s < total_len:
+                        future_close = df['Close'].iloc[idx + s]
+                        if pd.notna(future_close) and signal_price != 0:
+                            signal_event[f'+{s}B_Getiri%'] = round(((future_close - signal_price) / signal_price) * 100, 2)
+                        else:
+                            signal_event[f'+{s}B_Getiri%'] = None
                     else:
-                        signal_event[f'+{s}G_Getiri%'] = None
-                else:
-                    signal_event[f'+{s}G_Getiri%'] = None
-            
-            for s in STEPS:
-                if idx + s < len(df):
-                    future_window = df.iloc[idx:idx+s+1]
-                    max_price = future_window['High'].max()
-                    if pd.notna(max_price) and signal_price != 0:
-                        signal_event[f'+{s}G_Max_Getiri%'] = round(((max_price - signal_price) / signal_price) * 100, 2)
+                        signal_event[f'+{s}B_Getiri%'] = None
+                
+                for s in STEPS:
+                    if idx + s < total_len:
+                        max_price = df['High'].iloc[idx:idx+s+1].max()
+                        if pd.notna(max_price) and signal_price != 0:
+                            signal_event[f'+{s}B_Max_Getiri%'] = round(((max_price - signal_price) / signal_price) * 100, 2)
+                        else:
+                            signal_event[f'+{s}B_Max_Getiri%'] = None
                     else:
-                        signal_event[f'+{s}G_Max_Getiri%'] = None
+                        signal_event[f'+{s}B_Max_Getiri%'] = None
+                
+                max_dd = 0
+                if idx + 30 < total_len:
+                    low_valley = df['Low'].iloc[idx+1:idx+31].min()
+                    if signal_price > 0:
+                        max_dd = ((signal_price - low_valley) / signal_price) * 100
+                signal_event['Max_DD_30B'] = round(max_dd, 1)
+                
+                if signal_event.get('+30B_Getiri%') is not None and max_dd > 0:
+                    signal_event['Risk_Ratio_30B'] = round(signal_event['+30B_Getiri%'] / max_dd, 2)
                 else:
-                    signal_event[f'+{s}G_Max_Getiri%'] = None
-            
-            max_dd = 0
-            if idx + 30 < len(df):
-                low_valley = df['Low'].iloc[idx+1:idx+31].min()
-                if signal_price > 0:
-                    max_dd = ((signal_price - low_valley) / signal_price) * 100
-            
-            signal_event['Max_DD_30G'] = round(max_dd, 1)
-            
-            if signal_event.get('+30G_Getiri%') is not None and max_dd > 0:
-                signal_event['Risk_Ratio_30G'] = round(signal_event['+30G_Getiri%'] / max_dd, 2)
+                    signal_event['Risk_Ratio_30B'] = None
+                
+                for target_pct, key in [(1.10, 'Bars_To_%10'), (1.20, 'Bars_To_%20')]:
+                    target_price = signal_price * target_pct
+                    days = None
+                    for i in range(idx + 1, min(idx + 90, total_len)):
+                        if df['High'].iloc[i] >= target_price:
+                            days = i - idx
+                            break
+                    signal_event[key] = days
+                
+                signal_event['Is_Successful'] = is_successful(signal_event)
             else:
-                signal_event['Risk_Ratio_30G'] = None
+                for s in STEPS:
+                    signal_event[f'+{s}B_Getiri%'] = None
+                    signal_event[f'+{s}B_Max_Getiri%'] = None
+                signal_event['Max_DD_30B'] = None
+                signal_event['Risk_Ratio_30B'] = None
+                signal_event['Bars_To_%10'] = None
+                signal_event['Bars_To_%20'] = None
+                signal_event['Is_Successful'] = None
             
-            target_10 = signal_price * 1.10
-            days_to_target_10 = None
-            for i in range(idx + 1, min(idx + 90, len(df))):
-                if df['High'].iloc[i] >= target_10:
-                    days_to_target_10 = i - idx
-                    break
-            signal_event['Days_To_%10_Target'] = days_to_target_10
-            
-            target_20 = signal_price * 1.20
-            days_to_target_20 = None
-            for i in range(idx + 1, min(idx + 90, len(df))):
-                if df['High'].iloc[i] >= target_20:
-                    days_to_target_20 = i - idx
-                    break
-            signal_event['Days_To_%20_Target'] = days_to_target_20
-            
-            signal_event['Is_Successful'] = is_successful(signal_event)
-        else:
-            signal_event['Is_Successful'] = None
-        
-        return signal_event
+            results.append(signal_event)
+    
     except Exception as e:
-        return None
-
-def run_scan_fast(symbols, date, base_filters, profile=None, 
-                  index_df=None, date_index_map=None, min_final_score=40):
-    results = []
-    ds = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
-    
-    data_cache = {}
-    for sym in symbols:
-        try:
-            df = get_data_fast(sym, ds)
-            if df is not None and len(df) >= MIN_HISTORY:
-                data_cache[sym] = df
-        except:
-            continue
-    
-    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futures = {}
-        for sym, df in data_cache.items():
-            future = ex.submit(scan_stock_fast, sym, df, date, base_filters, 
-                               profile, index_df, date_index_map, min_final_score)
-            futures[future] = sym
-        
-        for future in as_completed(futures):
-            try:
-                r = future.result()
-                if r:
-                    results.append(r)
-            except:
-                pass
+        logger.warning(f"Tarama hatası ({sym}): {e}")
     
     return results
 
+def run_scan_optimized(symbols, bdays, base_filters, profile=None,
+                       index_df=None, date_index_map=None, min_final_score=40):
+    """Optimize tarama: hisse bazlı"""
+    all_signals = []
+    
+    start_date = bdays[0] - timedelta(days=LOOKBACK*2)
+    end_date = bdays[-1] + timedelta(days=FORWARD_DAYS)
+    
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    if end_str > today:
+        end_str = today
+    
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        futures = {}
+        for sym in symbols:
+            future = ex.submit(
+                process_single_stock, 
+                sym, start_str, end_str, bdays, base_filters, 
+                profile, index_df, date_index_map, min_final_score
+            )
+            futures[future] = sym
+        
+        for future in as_completed(futures):
+            sym = futures[future]
+            try:
+                results = future.result()
+                if results:
+                    all_signals.extend(results)
+            except Exception as e:
+                logger.error(f"Thread hatası ({sym}): {e}")
+    
+    return all_signals
+
+def process_single_stock(sym, start_str, end_str, bdays, base_filters, 
+                         profile, index_df, date_index_map, min_final_score):
+    """Tek hisse için veri çek ve tüm günleri tara"""
+    try:
+        df = get_data_range(sym, start_str, end_str)
+        if df is None:
+            return []
+        
+        return scan_stock_all_dates(sym, df, bdays, base_filters, profile,
+                                    index_df, date_index_map, min_final_score)
+    except Exception as e:
+        logger.error(f"Hisse işleme hatası ({sym}): {e}")
+        return []
+
+# ===================== COOLDOWN (DÜZELTİLMİŞ) =====================
+def apply_cooldown_filter(all_signals, signal_history, cooldown_days):
+    """Sıralı cooldown filtresi"""
+    # Önce tarihe göre sırala (cooldown için kritik)
+    all_signals = sorted(all_signals, key=lambda x: (x['Signal_Date'], x['Hisse']))
+    
+    filtered_signals = []
+    for signal in all_signals:
+        hisse = signal['Hisse']
+        signal_date = signal['Signal_Date']
+        
+        if hisse in signal_history:
+            last_signal = signal_history[hisse].get('last_date')
+            if last_signal is not None:
+                try:
+                    if isinstance(last_signal, str):
+                        last_signal = pd.Timestamp(last_signal)
+                    signal_dt = pd.Timestamp(signal_date)
+                    
+                    # İş günü farkını hesapla
+                    bdiff = np.busday_count(
+                        np.datetime64(last_signal.date()), 
+                        np.datetime64(signal_dt.date())
+                    )
+                    
+                    if bdiff <= cooldown_days:
+                        continue  # Cooldown aktif, bu sinyali atla
+                except Exception as e:
+                    logger.warning(f"Cooldown hesaplama hatası: {e}")
+        
+        filtered_signals.append(signal)
+        
+        # Sinyali kaydet (Timestamp olarak)
+        signal_history[hisse] = {
+            'last_date': pd.Timestamp(signal_date),
+            'last_score': signal['Final_Score']
+        }
+    
+    return filtered_signals, signal_history
+
+# ===================== YARDIMCI FONKSİYONLAR =====================
 def get_bdays(start, end):
     days = []
     cur = start
@@ -869,32 +869,13 @@ def get_bdays(start, end):
         cur += timedelta(days=1)
     return days
 
-# ===================== COOLDOWN =====================
-def is_cooldown_active(hisse, signal_date, signal_history, cooldown_days):
-    if hisse not in signal_history:
-        return False
-    
-    last_signal = signal_history[hisse].get('last_date')
-    if last_signal is None:
-        return False
-    
-    try:
-        bdiff = np.busday_count(
-            np.datetime64(last_signal),
-            np.datetime64(signal_date)
-        )
-        return bdiff <= cooldown_days
-    except:
-        days_diff = (pd.to_datetime(signal_date) - pd.to_datetime(last_signal)).days
-        return days_diff <= cooldown_days
-
 # ===================== ANA UYGULAMA =====================
 def main():
     if not check_password():
         return
     
     defaults = {
-        "strategy_preset": "🎯 Veri Odaklı V2.4 (Optimize)",
+        "strategy_preset": "🎯 Veri Odaklı V2.5 (Optimize)",
         "df": None, "ok": False, "t": 0, "days": 0,
         "min_final_score": 40,
         "signal_history": defaultdict(dict)
@@ -904,7 +885,7 @@ def main():
             st.session_state[k] = v
     
     c1, c2, c3 = st.columns([7,1,1])
-    with c1: st.markdown('<div class="header">⚡ BIST SİNYAL OLAYI BACKTEST MOTORU V2.4 (OPTİMİZE)</div>', unsafe_allow_html=True)
+    with c1: st.markdown('<div class="header">⚡ BIST SİNYAL OLAYI BACKTEST MOTORU V2.5</div>', unsafe_allow_html=True)
     with c2:
         if st.button("🔄 Sıfırla", use_container_width=True):
             st.session_state.clear()
@@ -925,11 +906,14 @@ def main():
         base_filters = strategy['base_filters']
         
         st.markdown("---")
-        st.markdown("### 📊 AĞIRLIKLAR (V2.4 - Optimize)")
+        st.markdown("### 📊 V2.5 Optimizasyonlar")
         st.caption("""
-        Trend Yönü: +Bonus | Trend Kalite: 10% | Money Flow: 15% | Momentum: 15% | Breakout: 25% | RS: 15%
-        MA50/200: Filtre + Bonus
-        **FİLTRELER:** Trend Score < 0 elenir | Trend Score 15 ve ADX<18 veya BB>0.65 elenir
+        ✅ Hisse bazlı veri çekme
+        ✅ İndikatörler tek seferde
+        ✅ RS Score önceden hesaplanır
+        ✅ Cooldown sıralı çalışır
+        ✅ Bar bazlı isimlendirme (+30B)
+        ✅ Hata loglaması aktif
         """)
         
         st.markdown("---")
@@ -989,22 +973,13 @@ def main():
                 st.caption(f"  • {key}: {value}")
         
         st.markdown("---")
-        st.markdown("### 📊 SİNYAL FİLTRELERİ")
-        
-        min_final_score = st.slider(
-            "Minimum Final Skor",
-            0, 100, st.session_state.min_final_score, 5
-        )
+        min_final_score = st.slider("Minimum Final Skor", 0, 100, st.session_state.min_final_score, 5)
         st.session_state.min_final_score = min_final_score
         
         st.markdown("---")
         st.markdown("### 🔄 SİNYAL COOLDOWN")
-        
         use_cooldown = st.checkbox("Cooldown aktif", value=True)
-        cooldown_days = st.slider(
-            "Cooldown işlem günü",
-            0, 30, SIGNAL_COOLDOWN, 1
-        )
+        cooldown_days = st.slider("Cooldown işlem günü", 0, 30, SIGNAL_COOLDOWN, 1)
         
         st.markdown("---")
         
@@ -1016,17 +991,19 @@ def main():
         st.markdown("### 📅 Tarama Aralığı")
         tip = st.radio("Tip", ["Tek Tarih", "Tarih Aralığı", "Ay"], horizontal=True)
         
+        yesterday = datetime.now().date() - timedelta(days=1)
+        while yesterday.weekday() >= 5:
+            yesterday -= timedelta(days=1)
+        
         if tip == "Tek Tarih":
-            d = turkish_date_picker("Tarih Seçin", datetime(2025, 6, 1), "tek")
+            d = turkish_date_picker("Tarih Seçin", yesterday, "tek")
             start = end = d
-            
         elif tip == "Tarih Aralığı":
             c1, c2 = st.columns(2)
             with c1:
-                start = turkish_date_picker("Başlangıç", datetime(2025, 6, 1), "bas")
+                start = turkish_date_picker("Başlangıç", yesterday - timedelta(days=30), "bas")
             with c2:
-                end = turkish_date_picker("Bitiş", datetime(2025, 6, 30), "bit")
-                
+                end = turkish_date_picker("Bitiş", yesterday, "bit")
         else:
             c1, c2 = st.columns(2)
             with c1:
@@ -1046,15 +1023,14 @@ def main():
             end_date = end
         
         if end_date > today:
-            st.warning(f"⚠️ Seçilen bitiş tarihi ({end_date}) bugünden ({today}) ileri!")
-            st.info(f"📌 Sistem bugünün tarihine ({today}) kadar olan verileri kullanacak.")
+            st.warning(f"⚠️ Bitiş tarihi bugünden ileri! Bugüne ({today}) kadar taranacak.")
             end = today
             bdays = get_bdays(pd.to_datetime(start), pd.to_datetime(end))
             days = len(bdays)
         
         st.markdown("---")
         st.markdown(f"📊 **{days}** işlem günü | 📋 **{len(symbols)}** hisse")
-        st.markdown(f"⏱️ ~**{days*len(symbols)*0.03/WORKERS:.0f}s**")
+        st.markdown(f"⏱️ ~**{len(symbols)*1.5/WORKERS:.0f}s** (optimize)")
         
         btn = st.button("⚡ TARAMA BAŞLAT", use_container_width=True, type="primary")
     
@@ -1065,52 +1041,51 @@ def main():
             index_df = None
             date_index_map = None
             try:
-                index_data = get_data_fast('XU100', end.strftime('%Y-%m-%d'))
+                start_idx = bdays[0] - timedelta(days=LOOKBACK*2)
+                end_idx = bdays[-1] + timedelta(days=FORWARD_DAYS)
+                index_data = get_data_range('XU100', start_idx.strftime('%Y-%m-%d'), 
+                                           min(end_idx, datetime.now()).strftime('%Y-%m-%d'))
                 if index_data is not None:
-                    index_df = calc_indicators_fast(index_data)
+                    index_df = calc_indicators_optimized(index_data)
                     if index_df is not None:
                         date_index_map = {
                             pd.Timestamp(d).normalize(): i 
                             for i, d in enumerate(index_df['Date'])
                         }
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Endeks verisi hatası: {e}")
         
-        with st.spinner(f'⚡ {days} gün taranıyor... (V2.4 Optimize)'):
-            all_signals = []
+        with st.spinner(f'⚡ {days} gün taranıyor... (V2.5)'):
+            all_signals = run_scan_optimized(
+                symbols, bdays, current_filters, profile,
+                index_df, date_index_map, min_final_score
+            )
+        
+        # Cooldown filtresi (sıralı çalışır)
+        if use_cooldown and all_signals:
             signal_history = st.session_state.signal_history
-            bar = st.progress(0)
-            txt = st.empty()
-            
-            for i, day in enumerate(bdays):
-                txt.text(f"📅 {day.strftime('%d.%m.%Y')} | {i+1}/{days}")
-                
-                res = run_scan_fast(symbols, day, current_filters, profile, 
-                                    index_df, date_index_map, min_final_score)
-                if res:
-                    for signal in res:
-                        hisse = signal['Hisse']
-                        signal_date = signal['Signal_Date']
-                        
-                        if use_cooldown:
-                            if is_cooldown_active(hisse, signal_date, signal_history, cooldown_days):
-                                continue
-                        
-                        all_signals.append(signal)
-                        
-                        signal_history[hisse] = {
-                            'last_date': signal_date,
-                            'last_score': signal['Final_Score']
-                        }
-                
-                bar.progress((i+1)/days)
-            
+            all_signals, signal_history = apply_cooldown_filter(
+                all_signals, signal_history, cooldown_days
+            )
             st.session_state.signal_history = signal_history
-            bar.empty()
-            txt.empty()
         
         if all_signals:
             df = pd.DataFrame(all_signals)
+            
+            # Eksik sütunları doldur
+            expected_columns = [
+                '+5B_Getiri%', '+10B_Getiri%', '+15B_Getiri%', 
+                '+30B_Getiri%', '+60B_Getiri%', '+90B_Getiri%',
+                '+5B_Max_Getiri%', '+10B_Max_Getiri%', '+15B_Max_Getiri%',
+                '+30B_Max_Getiri%', '+60B_Max_Getiri%', '+90B_Max_Getiri%',
+                'Max_DD_30B', 'Risk_Ratio_30B',
+                'Bars_To_%10', 'Bars_To_%20',
+                'Is_Successful'
+            ]
+            for col in expected_columns:
+                if col not in df.columns:
+                    df[col] = None
+            
             df = df.sort_values('Final_Score', ascending=False)
             
             st.session_state.df = df
@@ -1118,7 +1093,7 @@ def main():
             st.session_state.t = time.time() - t0
             st.session_state.days = days
         else:
-            st.warning("⚠️ Sinyal olayı bulunamadı! Lütfen filtreleri gevşetin veya tarih aralığını değiştirin.")
+            st.warning("⚠️ Sinyal olayı bulunamadı!")
             st.session_state.ok = False
     
     if st.session_state.get('ok') and st.session_state.df is not None:
@@ -1129,25 +1104,25 @@ def main():
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1: st.metric("Toplam Sinyal", len(df))
         with c2: st.metric("Ort. Final Skor", f"{df['Final_Score'].mean():.0f}")
+        with c3: st.metric("📋 Benzersiz Hisse", f"{df['Hisse'].nunique()}")
         
-        unique_stocks = df['Hisse'].nunique()
-        with c3: st.metric("📋 Benzersiz Hisse", f"{unique_stocks}")
-        
-        success_df = df[df['Is_Successful'].notna()]
-        if len(success_df) > 0:
-            success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
-            with c4: st.metric("✅ Başarı Oranı (RR>2)", f"%{success_rate:.0f}")
-        else:
-            with c4: st.metric("✅ Başarı Oranı", "Veri Yok")
-        
-        r30 = df['+30G_Getiri%'].dropna()
-        with c5:
-            if len(r30) > 0:
-                st.metric("📈 30G Ort. Getiri", f"%{r30.mean():.1f}")
+        if 'Is_Successful' in df.columns:
+            success_df = df[df['Is_Successful'].notna()]
+            if len(success_df) > 0:
+                success_rate = success_df['Is_Successful'].sum() / len(success_df) * 100
+                with c4: st.metric("✅ Başarı Oranı", f"%{success_rate:.0f}")
             else:
-                st.metric("📈 30G Ort. Getiri", "Veri Yok")
+                with c4: st.metric("✅ Başarı Oranı", "Veri Yok")
         
-        # MA Trend Analizi
+        if '+30B_Getiri%' in df.columns:
+            r30 = df['+30B_Getiri%'].dropna()
+            with c5:
+                if len(r30) > 0:
+                    st.metric("📈 30B Ort. Getiri", f"%{r30.mean():.1f}")
+                else:
+                    st.metric("📈 30B Ort. Getiri", "Veri Yok")
+        
+        # Grafikler
         st.markdown("### 📈 MA Trend Analizi")
         ma_cols = ['MA5', 'MA10', 'MA20', 'MA50', 'MA200']
         if all(col in df.columns for col in ma_cols):
@@ -1156,177 +1131,61 @@ def main():
             
             fig_ma = go.Figure()
             fig_ma.add_trace(go.Bar(
-                x=ma_data['MA'],
-                y=ma_data['Ortalama'],
+                x=ma_data['MA'], y=ma_data['Ortalama'],
                 marker_color=['#3498db', '#2ecc71', '#f1c40f', '#e67e22', '#e74c3c'],
-                text=ma_data['Ortalama'].round(2),
-                textposition='outside'
+                text=ma_data['Ortalama'].round(2), textposition='outside'
             ))
-            fig_ma.update_layout(
-                title="Ortalama Hareketli Ortalama Değerleri",
-                xaxis_title="MA Türü",
-                yaxis_title="Ortalama Fiyat",
-                height=250
-            )
+            fig_ma.update_layout(title="Ortalama MA Değerleri", height=250)
             st.plotly_chart(fig_ma, use_container_width=True)
         
-        # Bonus dağılımı
-        st.markdown("### 🎯 Bonus Dağılımı")
-        bonus_cols = ['ADX_Bonus', 'Vol_Bonus', 'CMF_Bonus']
-        if all(col in df.columns for col in bonus_cols):
-            bonus_data = df[bonus_cols].sum()
-            fig_bonus = go.Figure()
-            fig_bonus.add_trace(go.Bar(
-                x=bonus_data.index,
-                y=bonus_data.values,
-                marker_color=['#3498db', '#2ecc71', '#f1c40f'],
-                text=bonus_data.values,
-                textposition='outside'
-            ))
-            fig_bonus.update_layout(
-                title="Toplam Bonus Dağılımı",
-                xaxis_title="Bonus Türü",
-                yaxis_title="Toplam Bonus Puanı",
-                height=250
-            )
-            st.plotly_chart(fig_bonus, use_container_width=True)
-        
-        # Skor dağılımı
-        st.markdown("### 📊 Skor Bileşenleri")
-        score_cols = ['Base_Score', 'Momentum_Score', 'Breakout_Score', 'RS_Score', 'Trend_Score']
-        available_cols = [col for col in score_cols if col in df.columns]
-        
-        if available_cols:
-            score_data = df[available_cols].mean().reset_index()
-            score_data.columns = ['Skor', 'Ortalama']
-            
-            fig3 = go.Figure()
-            fig3.add_trace(go.Bar(
-                x=score_data['Skor'],
-                y=score_data['Ortalama'],
-                marker_color=['#667eea', '#764ba2', '#3498db', '#2ecc71', '#f1c40f'],
-                text=score_data['Ortalama'].round(1),
-                textposition='outside'
-            ))
-            fig3.update_layout(
-                title="Ortalama Skor Bileşenleri",
-                xaxis_title="Skor Türü",
-                yaxis_title="Ortalama Değer",
-                height=300
-            )
-            st.plotly_chart(fig3, use_container_width=True)
-        
-        # Tekrar sinyal analizi
-        st.markdown("### 🔄 Tekrar Sinyal Veren Hisseler")
-        
-        repeat_df = df.groupby('Hisse').agg(
-            Sinyal=('Signal_ID', 'count'),
-            Test=('Is_Successful', 'count'),
-            Basari=('Is_Successful', 'sum'),
-            Ort_Skor=('Final_Score', 'mean'),
-            Ort_30G=('+30G_Getiri%', 'mean'),
-            Ort_DD=('Max_DD_30G', 'mean')
-        ).reset_index()
-        
-        def calculate_success_rate(row):
-            test = row['Test']
-            basari = row['Basari']
-            
-            if pd.isna(test) or pd.isna(basari):
-                return 0.0
-            if test == 0:
-                return 0.0
-            
-            test = float(test)
-            basari = float(basari)
-            
-            return round((basari / test * 100), 1)
-        
-        repeat_df['Başarı_Oranı'] = repeat_df.apply(calculate_success_rate, axis=1)
-        
-        repeat_df = repeat_df.fillna(0)
-        repeat_df = repeat_df.sort_values('Sinyal', ascending=False)
-        
-        display_repeat = repeat_df[['Hisse', 'Sinyal', 'Test', 'Başarı_Oranı', 'Ort_Skor', 'Ort_30G', 'Ort_DD']]
-        display_repeat.columns = ['Hisse', 'Sinyal_Sayısı', 'Test_Sayısı', 'Başarı_Oranı', 'Ort_Skor', 'Ort_30G_Getiri', 'Ort_DD']
-        st.dataframe(display_repeat.head(10), use_container_width=True)
-        
         # Sinyal listesi
-        st.markdown("### 📋 Sinyal Olayları Listesi")
-        
+        st.markdown("### 📋 Sinyal Olayları")
         display_cols = ['Signal_ID', 'Hisse', 'Signal_Date', 'Entry_Price', 'Final_Score',
-                       'Base_Score', 'Momentum_Score', 'Breakout_Score', 'RS_Score', 'Trend_Score',
-                       'ADX_Bonus', 'Vol_Bonus', 'CMF_Bonus', 'Quality_Penalty',
                        'RSI', 'ADX', 'VolRatio', 'CMF', 'BB_Position',
-                       'MA5', 'MA10', 'MA20', 'MA50', 'MA200',
-                       '+30G_Getiri%', 'Max_DD_30G', 'Is_Successful']
-        
+                       '+30B_Getiri%', 'Max_DD_30B', 'Is_Successful']
         available_cols = [col for col in display_cols if col in df.columns]
         
-        def style_final_score(val):
-            if val >= 70:
-                return 'background-color: #9b59b6; color: white; font-weight: bold'
-            elif val >= 60:
-                return 'background-color: #2ecc71; color: white'
-            elif val >= 50:
-                return 'background-color: #f1c40f'
-            else:
-                return 'background-color: #e74c3c; color: white'
+        def style_score(val):
+            if val >= 70: return 'background-color: #9b59b6; color: white'
+            elif val >= 60: return 'background-color: #2ecc71; color: white'
+            elif val >= 50: return 'background-color: #f1c40f'
+            else: return 'background-color: #e74c3c; color: white'
         
-        styled_df = df[available_cols].style.map(style_final_score, subset=['Final_Score'])
+        if 'Final_Score' in available_cols:
+            styled_df = df[available_cols].style.map(style_score, subset=['Final_Score'])
+        else:
+            styled_df = df[available_cols].style
+        
         st.dataframe(styled_df, use_container_width=True, height=400)
         
         # İndirme
         c1, c2 = st.columns(2)
         with c1:
-            csv_data = df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
-            st.download_button(
-                "📊 CSV İndir",
-                csv_data,
-                "sinyal_olaylari_v24_optimize.csv",
-                "text/csv"
-            )
+            st.download_button("📊 CSV İndir", 
+                             df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'),
+                             "sinyal_olaylari_v25.csv", "text/csv")
         with c2:
             export_df = df.head(5000) if len(df) > 5000 else df
             buf = BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 export_df.to_excel(w, index=False)
-            st.download_button(
-                "📑 Excel İndir",
-                buf.getvalue(),
-                "sinyal_olaylari_v24_optimize.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            st.download_button("📑 Excel İndir", buf.getvalue(),
+                             "sinyal_olaylari_v25.xlsx",
+                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     elif not btn:
-        st.markdown("### ⚡ Sinyal Olayı Backtest Motoru V2.4 (Optimize)")
+        st.markdown("### ⚡ V2.5 - Optimize Mimari")
         st.markdown("""
-        **V2.4 Optimize Sürüm - Haziran 2025 Verilerine Göre:**
-
-        **📊 Değişiklikler:**
-        | Özellik | Önceki | Yeni |
-        |---------|--------|------|
-        | Momentum Ağırlığı | 25% | **15%** |
-        | Breakout Ağırlığı | 20% | **25%** |
-        | Trend Score < 0 | Dahil | **Otomatik Elenir** |
-        | Trend Score 15 | Normal | **ADX<18 veya BB>0.65 ise elenir** |
-        | RSI Aralığı | 25-65 | **25-60** |
-        | ADX Min | 10 | **14** |
-        | CMF Min | -0.05 | **-0.02** |
-        | BB Max | 0.75 | **0.70** |
-
-        **📈 MA Kullanımı:**
-        | MA | Kullanım Amacı |
-        |----|----------------|
-        | **MA5** | Çok kısa vadeli trend |
-        | **MA10** | Kısa vadeli trend |
-        | **MA20** | Ana kısa/orta trend yönü |
-        | **MA50** | Trend filtresi |
-        | **MA200** | Uzun vadeli filtre |
-
-        **⚡ Hız:**
-        - İlk tarama: ~15-20 saniye (100 hisse)
-        - Sonraki taramalar (24 saat içinde): **~2-3 saniye**
+        **V2.5 Düzeltmeler:**
+        
+        | Özellik | Değişiklik |
+        |---------|-----------|
+        | Cooldown | **Sıralı çalışır** (tarihe göre sıralanır) |
+        | İsimlendirme | **+30B** (bar, gün değil) |
+        | RS Score | **İndikatör aşamasında** hesaplanır |
+        | Hata Yönetimi | **Loglama aktif**, sessiz hata yok |
+        | Gereksiz Import | Temizlendi |
+        | TEST_MODE | Kullanıcı: ADMIN, Şifre: Elma* |
         """)
 
 if __name__ == "__main__":
